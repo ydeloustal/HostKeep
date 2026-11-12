@@ -1,24 +1,20 @@
 <?php
 declare(strict_types=1);
 
+require __DIR__ . '/env.php';
+
 const APP_ROOT = __DIR__ . '/..';
-const STATE_DIR = '/var/lib/dashboard';
+const STATE_DIR = '/var/lib/hostkeep';
 const JOBS_DIR = STATE_DIR . '/jobs';
-const AUTH_LOG = '/var/log/dashboard/auth.log';
-const HELPER = '/usr/local/sbin/dashboard-action';
+const AUTH_LOG = '/var/log/hostkeep/auth.log';
+const HELPER = '/usr/local/sbin/hostkeep-action';
 
-function cfg(): array
-{
-    static $c = null;
-    return $c ??= require APP_ROOT . '/config.php';
-}
-
-/** Web connection: OS user "dashboard" authenticates through the MariaDB unix socket. */
+/** Web connection: OS user "hostkeep" authenticates through the MariaDB unix socket. */
 function db(): PDO
 {
     static $pdo = null;
     if ($pdo === null) {
-        $pdo = new PDO('mysql:unix_socket=/run/mysqld/mysqld.sock;dbname=dashboard;charset=utf8mb4', 'dashboard', '', [
+        $pdo = new PDO('mysql:unix_socket=/run/mysqld/mysqld.sock;dbname=hostkeep;charset=utf8mb4', 'hostkeep', '', [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);

@@ -31,14 +31,14 @@ $token = csrf_token();
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Connexion · Admin VPS</title>
+<title>Connexion · Hostkeep</title>
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body class="login-page">
 <main class="login-card">
   <img src="/assets/favicon.svg" alt="" class="login-logo">
-  <h1>Admin VPS</h1>
+  <h1>Hostkeep</h1>
   <p class="muted"><?= h(gethostname() ?: 'serveur') ?></p>
   <?php if ($error !== ''): ?><p class="form-error" role="alert"><?= h($error) ?></p><?php endif; ?>
   <form method="post" autocomplete="on">

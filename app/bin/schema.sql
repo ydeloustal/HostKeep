@@ -1,6 +1,6 @@
--- Dashboard database. Run as MariaDB root (unix socket): mysql < schema.sql
-CREATE DATABASE IF NOT EXISTS dashboard CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE dashboard;
+-- Hostkeep database. Run as MariaDB root (unix socket): mysql < schema.sql
+CREATE DATABASE IF NOT EXISTS hostkeep CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE hostkeep;
 
 CREATE TABLE IF NOT EXISTS metrics (
   ts INT UNSIGNED NOT NULL PRIMARY KEY,
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   KEY ip_ts (ip, ts)
 ) ENGINE=InnoDB;
 
--- Traffic statistics, built from /var/log/apache2/dashboard-traffic.log (GlobalLog with the vhost name).
+-- Traffic statistics, built from /var/log/apache2/hostkeep-traffic.log (GlobalLog with the vhost name).
 CREATE TABLE IF NOT EXISTS traffic_daily (
   day DATE NOT NULL,
   host VARCHAR(255) NOT NULL,
@@ -73,9 +73,9 @@ CREATE TABLE IF NOT EXISTS traffic_top (
   PRIMARY KEY (day, host, kind, item)
 ) ENGINE=InnoDB;
 
--- The web app connects as OS user "dashboard" through the unix socket: no password stored anywhere.
-CREATE USER IF NOT EXISTS 'dashboard'@'localhost' IDENTIFIED VIA unix_socket;
-GRANT SELECT ON dashboard.* TO 'dashboard'@'localhost';
-GRANT INSERT, DELETE ON dashboard.login_attempts TO 'dashboard'@'localhost';
-GRANT INSERT, UPDATE ON dashboard.audit_log TO 'dashboard'@'localhost';
+-- The web app connects as OS user "hostkeep" through the unix socket: no password stored anywhere.
+CREATE USER IF NOT EXISTS 'hostkeep'@'localhost' IDENTIFIED VIA unix_socket;
+GRANT SELECT ON hostkeep.* TO 'hostkeep'@'localhost';
+GRANT INSERT, DELETE ON hostkeep.login_attempts TO 'hostkeep'@'localhost';
+GRANT INSERT, UPDATE ON hostkeep.audit_log TO 'hostkeep'@'localhost';
 FLUSH PRIVILEGES;

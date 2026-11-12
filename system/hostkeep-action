@@ -1,28 +1,44 @@
 #!/bin/bash
-# Root helper of the admin dashboard. Only user "dashboard" may run it, through sudo
-# (/etc/sudoers.d/dashboard). It runs a fixed allow-list of actions and validates every
+# Root helper of the Hostkeep. Only user "hostkeep" may run it, through sudo
+# (/etc/sudoers.d/hostkeep). It runs a fixed allow-list of actions and validates every
 # argument itself. There is no generic command execution.
 #
-#   dashboard-action job <verb> [args...]   validate, then run in the background (systemd-run), print the job id
-#   dashboard-action log <key> [lines]      print the tail of an allowed log
+#   hostkeep-action job <verb> [args...]   validate, then run in the background (systemd-run), print the job id
+#   hostkeep-action log <key> [lines]      print the tail of an allowed log
 #
 # Never touches: sshd, network, firewall, reboot, certificate deletion.
 set -uo pipefail
 umask 027
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C HOME=/root PM2_HOME=/root/.pm2
 
-JOBS=/var/lib/dashboard/jobs
-APP=/var/www/admin-dashboard
-BACKUPS=/var/backups/dashboard-db
-SELF=/usr/local/sbin/dashboard-action
-SERVICES="apache2 php8.4-fpm mariadb fail2ban cron postfix"
-RELOADABLE="apache2 php8.4-fpm mariadb fail2ban postfix"
+JOBS=/var/lib/hostkeep/jobs
+APP=/var/www/hostkeep
+BACKUPS=/var/backups/hostkeep
+SELF=/usr/local/sbin/hostkeep-action
+
+# Settings from the install's .env (KEY=value). Read with grep, never sourced: nothing is executed.
+env_get() {
+  local v
+  v=$(grep -m1 -E "^[[:space:]]*$1[[:space:]]*=" "$APP/.env" 2>/dev/null | cut -d= -f2- | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+  v=${v#[\"\']}; v=${v%[\"\']}
+  printf '%s' "${v:-${2:-}}"
+}
+PHPV=$(env_get HOSTKEEP_PHP_VERSION "$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null)")
+detect_services() {
+  local s out=()
+  for s in apache2 nginx "php$PHPV-fpm" mariadb mysql fail2ban cron postfix; do
+    [[ $s == mysql ]] && in_list mariadb "${out[@]}" && continue   # alias of mariadb on Debian
+    systemctl cat "$s.service" >/dev/null 2>&1 && out+=("$s")
+  done
+  echo "${out[*]}"
+}
 
 die() { echo "Refusé : $*" >&2; exit 2; }
 in_list() { local x=$1; shift; local i; for i in "$@"; do [[ $i == "$x" ]] && return 0; done; return 1; }
 pm2_names() { pm2 jlist 2>/dev/null | python3 -c 'import json,sys; [print(p["name"]) for p in json.load(sys.stdin)]' 2>/dev/null; }
 jails() { fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:[[:space:]]*//p' | tr ',' '\n' | tr -d ' \t'; }
 valid_ip() { python3 -I -c 'import ipaddress,sys; ipaddress.ip_address(sys.argv[1])' "$1" 2>/dev/null; }
+services() { local s; s=$(env_get HOSTKEEP_SERVICES); if [[ -n $s ]]; then echo "$s"; else detect_services; fi; }
 
 validate() {
   local verb=${1:-}; shift || true
@@ -30,8 +46,8 @@ validate() {
     service)
       [[ $# -eq 2 ]] || die "arguments"
       in_list "$1" restart reload || die "action de service inconnue"
-      in_list "$2" $SERVICES || die "service non autorisé"
-      if [[ $1 == reload ]]; then in_list "$2" $RELOADABLE || die "reload non supporté pour $2"; fi ;;
+      in_list "$2" $(services) || die "service non autorisé"
+      if [[ $1 == reload && $2 == cron ]]; then die "reload non supporté pour cron"; fi ;;
     pm2-restart)
       [[ $# -eq 1 && $1 =~ ^[A-Za-z0-9._-]{1,64}$ ]] || die "nom d'appli"
       in_list "$1" $(pm2_names) || die "appli PM2 inconnue" ;;
@@ -40,7 +56,7 @@ validate() {
       in_list "$1" enable disable || die "action de site inconnue"
       [[ $2 =~ ^[A-Za-z0-9._-]{1,100}$ ]] || die "nom de vhost"
       [[ -f /etc/apache2/sites-available/$2.conf ]] || die "vhost inconnu"
-      [[ $2 == admin-dashboard* ]] && die "le vhost du tableau de bord est protégé"
+      [[ $2 == hostkeep* ]] && die "le vhost du tableau de bord est protégé"
       return 0 ;;
     certbot)
       [[ $# -eq 1 ]] && in_list "$1" dry-run renew || die "action certbot" ;;
@@ -66,6 +82,7 @@ run() {
   case $verb in
     service)
       if [[ $2 == apache2 ]]; then configtest || { echo "configtest en échec : rien n'a été fait."; return 1; }; fi
+      if [[ $2 == nginx ]]; then echo "# nginx -t"; nginx -t 2>&1 || { echo "nginx -t en échec : rien n'a été fait."; return 1; }; fi
       echo "# systemctl $1 $2"
       systemctl "$1" "$2" || return 1
       sleep 1; systemctl --no-pager --lines=0 status "$2" | head -6 ;;
@@ -93,11 +110,11 @@ run() {
     backup-now)
       php "$APP/bin/collect.php" backup && echo "Sauvegarde terminée." ;;
     backup-restore)
-      mkdir -p "$BACKUPS/pre-restore" && chgrp dashboard "$BACKUPS/pre-restore" && chmod 750 "$BACKUPS/pre-restore"
+      mkdir -p "$BACKUPS/pre-restore" && chgrp hostkeep "$BACKUPS/pre-restore" && chmod 750 "$BACKUPS/pre-restore"
       pre="$BACKUPS/pre-restore/$(date +%Y%m%d-%H%M%S)-$2.sql.gz"
       echo "# Copie de sécurité de l'état actuel de $2 -> $pre"
       bash -c 'set -o pipefail; mysqldump --single-transaction --quick --routines --triggers --events "$1" | gzip -6 > "$2"' _ "$2" "$pre" || { echo "Copie de sécurité impossible : restauration annulée."; rm -f "$pre"; return 1; }
-      chgrp dashboard "$pre"; chmod 640 "$pre"
+      chgrp hostkeep "$pre"; chmod 640 "$pre"
       echo "# Restauration de $2 depuis la sauvegarde du $1"
       gunzip -c "$BACKUPS/$1/$2.sql.gz" | mysql "$2" || return 1
       php "$APP/bin/collect.php" backup-list >/dev/null 2>&1; echo "Restauration terminée." ;;
@@ -116,7 +133,11 @@ run() {
 }
 
 # Read-only file access, limited to these trees (after resolving symlinks and "..").
-FS_ROOTS="/var/www /home/mmi24c04/public_html /etc/apache2 /etc/php/8.4 /etc/mysql /etc/cron.d /etc/fail2ban /etc/letsencrypt/renewal /etc/logrotate.d /var/log"
+# HOSTKEEP_FILE_ROOTS in .env; only the folders that exist are kept.
+FS_ROOTS=""
+for r in $(env_get HOSTKEEP_FILE_ROOTS "/var/www /etc/apache2 /etc/nginx /etc/php /etc/mysql /etc/cron.d /etc/fail2ban /etc/letsencrypt/renewal /etc/logrotate.d /var/log"); do
+  [[ $r == /* && -d $r ]] && FS_ROOTS+="$(realpath -e -- "$r") "
+done
 fs_path() {
   local p r
   [[ ${1:-} == /* && ${#1} -lt 4096 ]] || { echo "Refusé : chemin" >&2; return 2; }
@@ -133,9 +154,9 @@ case $cmd in
     validate "$@"
     id="$(date +%s)-$$"
     log="$JOBS/$id.log"
-    : > "$log" && chgrp dashboard "$log" && chmod 640 "$log" || die "impossible de créer le journal de la tâche"
-    # Transient unit: the job lives outside PHP-FPM's cgroup, so restarting php8.4-fpm does not kill it.
-    systemd-run --quiet --collect --unit="dashboard-job-$id" -p StandardOutput="append:$log" -p StandardError=inherit \
+    : > "$log" && chgrp hostkeep "$log" && chmod 640 "$log" || die "impossible de créer le journal de la tâche"
+    # Transient unit: the job lives outside PHP-FPM's cgroup, so restarting php-fpm does not kill it.
+    systemd-run --quiet --collect --unit="hostkeep-job-$id" -p StandardOutput="append:$log" -p StandardError=inherit \
       "$SELF" _run "$id" "$@" >/dev/null || die "systemd-run a échoué"
     echo "$id" ;;
   _run)
@@ -145,14 +166,14 @@ case $cmd in
     echo "### $(date '+%F %T') — $*"
     run "$@"; rc=$?
     echo "### Terminé (code $rc)"
-    echo "$rc" > "$JOBS/$id.rc.tmp" && chgrp dashboard "$JOBS/$id.rc.tmp" && chmod 640 "$JOBS/$id.rc.tmp" && mv "$JOBS/$id.rc.tmp" "$JOBS/$id.rc" ;;
+    echo "$rc" > "$JOBS/$id.rc.tmp" && chgrp hostkeep "$JOBS/$id.rc.tmp" && chmod 640 "$JOBS/$id.rc.tmp" && mv "$JOBS/$id.rc.tmp" "$JOBS/$id.rc" ;;
   log)
     key=${1:-}; n=${2:-200}
     [[ $n =~ ^[0-9]{1,4}$ ]] || die "nombre de lignes"
     case $key in
       journal-errors) journalctl -p err -n "$n" --no-pager -o short-iso ;;
       fail2ban) tail -n "$n" /var/log/fail2ban.log ;;
-      dashboard-auth) tail -n "$n" /var/log/dashboard/auth.log 2>/dev/null || true ;;
+      hostkeep-auth) tail -n "$n" /var/log/hostkeep/auth.log 2>/dev/null || true ;;
       apache:*)
         f=${key#apache:}
         [[ $f =~ ^[A-Za-z0-9._-]+\.log$ && -f /var/log/apache2/$f && ! -L /var/log/apache2/$f ]] || die "journal inconnu"

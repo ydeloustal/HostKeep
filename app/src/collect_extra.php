@@ -3,11 +3,11 @@ declare(strict_types=1);
 
 /** Collector tasks for backups, traffic, performance and the security scan (run as root by bin/collect.php). */
 
-const BACKUP_DIR = '/var/backups/dashboard-db';
+const BACKUP_DIR = '/var/backups/hostkeep';
 const BACKUP_KEEP_DAYS = 7;
-const TRAFFIC_LOG = '/var/log/apache2/dashboard-traffic.log';
-const TRAFFIC_STATE = '/var/lib/dashboard/traffic.json';
-const BOT_RE = '/bot|crawl|spider|slurp|curl|wget|python|go-http|httpclient|scan|nmap|zgrab|masscan|libwww|okhttp|java\/|headless|monitor|uptime|axios|node-fetch|preview|facebookexternalhit|dashboard-/i';
+const TRAFFIC_LOG = '/var/log/apache2/hostkeep-traffic.log';
+const TRAFFIC_STATE = '/var/lib/hostkeep/traffic.json';
+const BOT_RE = '/bot|crawl|spider|slurp|curl|wget|python|go-http|httpclient|scan|nmap|zgrab|masscan|libwww|okhttp|java\/|headless|monitor|uptime|axios|node-fetch|preview|facebookexternalhit|hostkeep-/i';
 const STATIC_RE = '/\.(css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|otf|mp4|webm|mp3|webmanifest|json|txt|xml)$/i';
 
 /* ---------- database backups ---------- */
@@ -19,7 +19,7 @@ function c_backup(): void
     if (!is_dir($dir)) {
         mkdir($dir, 0750, true);
     }
-    chgrp($dir, 'dashboard');
+    chgrp($dir, 'hostkeep');
     $dbs = $pdo->query("SELECT schema_name FROM information_schema.schemata
                         WHERE schema_name NOT IN ('information_schema', 'performance_schema', 'sys')")->fetchAll(PDO::FETCH_COLUMN);
     $errors = [];
@@ -33,7 +33,7 @@ function c_backup(): void
         exec('bash -c ' . escapeshellarg($cmd) . ' 2>&1', $out, $rc);
         if ($rc === 0) {
             rename("$f.tmp", $f);
-            chgrp($f, 'dashboard');
+            chgrp($f, 'hostkeep');
             chmod($f, 0640);
             echo "$db : " . round(filesize($f) / 1024) . " Ko\n";
         } else {
@@ -244,9 +244,9 @@ function c_perf(): void
             $sockets[$s[1]][] = $n[1];
         }
     }
-    $fpmLog = (string) @file_get_contents('/var/log/php8.4-fpm.log');
+    $fpmLog = (string) @file_get_contents('/var/log/php' . php_version() . '-fpm.log');
     $conf = [];
-    foreach (glob('/etc/php/8.4/fpm/pool.d/*.conf') ?: [] as $f) {
+    foreach (glob('/etc/php/' . php_version() . '/fpm/pool.d/*.conf') ?: [] as $f) {
         $name = null;
         foreach (file($f) as $l) {
             if (preg_match('/^\s*\[([^\]]+)\]/', $l, $m)) {
@@ -259,7 +259,7 @@ function c_perf(): void
     $poolRows = [];
     foreach ($conf as $name => $c) {
         $sites = array_values(array_unique($sockets[$c['listen'] ?? ''] ?? []));
-        if (($c['listen'] ?? '') === '/run/php/php8.4-fpm.sock') {
+        if (($c['listen'] ?? '') === '/run/php/php' . php_version() . '-fpm.sock') {
             $sites[] = 'tous les autres sites PHP';
         }
         preg_match_all('/\[pool ' . preg_quote($name, '/') . '\] server reached pm\.max_children/', $fpmLog, $w);
@@ -315,7 +315,7 @@ function http_probe(string $url, int $max = 16384): array
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_TIMEOUT => 8, CURLOPT_CONNECTTIMEOUT => 4, CURLOPT_FOLLOWLOCATION => false,
-        CURLOPT_USERAGENT => 'dashboard-security-scan',
+        CURLOPT_USERAGENT => 'hostkeep-security-scan',
         CURLOPT_HEADERFUNCTION => function ($c, $h) use (&$headers) {
             $p = explode(':', $h, 2);
             if (count($p) === 2) {
@@ -407,7 +407,7 @@ function c_scan(): void
         $name = $s['name'];
         $base = rtrim($s['url'], '/');
         $home = http_probe($base . '/', 65536);
-        $fallback = http_probe($base . '/dashboard-scan-' . bin2hex(random_bytes(4)) . '.txt');
+        $fallback = http_probe($base . '/hostkeep-scan-' . bin2hex(random_bytes(4)) . '.txt');
         $isFallback = fn(array $r) => $r['code'] === 200 && $fallback['code'] === 200 && substr($r['body'], 0, 2000) === substr($fallback['body'], 0, 2000);
 
         $probes = [

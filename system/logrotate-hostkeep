@@ -1,9 +1,9 @@
-/var/log/dashboard/*.log {
+/var/log/hostkeep/*.log {
     weekly
     rotate 4
     compress
     delaycompress
     missingok
     notifempty
-    create 0640 dashboard adm
+    create 0640 hostkeep adm
 }

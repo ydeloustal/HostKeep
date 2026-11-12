@@ -19,13 +19,13 @@ $nav = ['home' => 'Accueil', 'sites' => 'Sites', 'system' => 'Système', 'securi
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <meta name="csrf" content="<?= h($token) ?>">
-<title>Admin VPS</title>
+<title>Hostkeep</title>
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="#home"><img src="/assets/favicon.svg" alt=""><span><strong>Admin VPS</strong><small id="hostname"><?= h(gethostname() ?: '') ?></small></span></a>
+  <a class="brand" href="#home"><img src="/assets/favicon.svg" alt=""><span><strong>Hostkeep</strong><small id="hostname"><?= h(gethostname() ?: '') ?></small></span></a>
   <nav class="mainnav" aria-label="Sections">
     <?php foreach ($nav as $id => $label): ?>
       <a href="#<?= $id ?>" data-nav="<?= $id ?>"><span class="ico" data-icon="<?= $id ?>"></span><span><?= h($label) ?></span></a>
