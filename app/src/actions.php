@@ -20,6 +20,7 @@ const ACTIONS = [
     'apt-update'     => [],
     'apt-upgrade'    => [],
     'self-update'    => [],
+    'self-rollback'  => [],
 ];
 
 const BACKUP_DIR = '/var/backups/hostkeep';

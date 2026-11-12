@@ -473,8 +473,12 @@ B.panel = async () => {
     cls: n ? 'primary' : '',
     confirm: 'Récupérer la dernière version depuis GitHub (git pull) et réinstaller le panel ? La page sera indisponible quelques secondes.',
   });
+  const back = d.previous ? actionBtn(`Revenir à ${d.previous.hash}`, 'self-rollback', [], {
+    cls: 'danger',
+    confirm: `Revenir à la version précédente (${d.previous.hash} — ${d.previous.subject}) et réinstaller le panel ?`,
+  }) : null;
   return {
-    actions: btn,
+    actions: [back, btn],
     body: [
       stats(
         stat('Version installée', d.hash || '–', d.ts ? `${fmtDate(d.ts)} · ${d.subject}` : ''),
@@ -483,7 +487,8 @@ B.panel = async () => {
       ),
       d.dirty ? el('div', { class: 'alert warn' }, badge('attention', 'warn'), el('span', {}, `Des fichiers ont été modifiés à la main dans ${d.source} : la mise à jour sera refusée.`)) : null,
       n ? card('À installer', table(['Commit', 'Date', 'Description'], d.behind.map(c => [el('span', { class: 'mono' }, c.hash), fmtDate(c.ts), c.subject]))) : null,
-      note('git pull (avance rapide uniquement) dans le dépôt source, puis ./install.sh app : la configuration (.env) et le mot de passe sont conservés.'),
+      d.previous ? note(`Version précédente gardée pour un retour arrière : ${d.previous.hash} (${fmtDate(d.previous.ts)}) — ${d.previous.subject}.`) : null,
+      note('git pull (avance rapide uniquement) dans le dépôt source, puis ./install.sh app : la configuration (.env) et le mot de passe sont conservés. Après une mise à jour, « Revenir à… » réinstalle la version d\'avant.'),
       stale(s.updated),
     ],
   };

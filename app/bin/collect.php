@@ -369,7 +369,13 @@ function c_panel(): void
         [$h, $t, $s] = array_pad(explode("\t", $l, 3), 3, '');
         $behind[] = ['hash' => $h, 'ts' => (int) $t, 'subject' => $s];
     }
-    save('panel', ['git' => true, 'source' => $src, 'branch' => trim(sh($git . 'rev-parse --abbrev-ref HEAD')),
+    $prev = trim((string) @file_get_contents('/var/lib/hostkeep/previous'));
+    $previous = null;
+    if (preg_match('/^[0-9a-f]{40}$/', $prev)) {
+        [$ph, $pt, $ps] = array_pad(explode("\t", trim(sh($git . "log -1 --format='%h%x09%ct%x09%s' " . $prev)), 3), 3, '');
+        $previous = $ph !== '' ? ['hash' => $ph, 'ts' => (int) $pt, 'subject' => $ps] : null;
+    }
+    save('panel', ['git' => true, 'source' => $src, 'previous' => $previous, 'branch' => trim(sh($git . 'rev-parse --abbrev-ref HEAD')),
         'remote' => trim(sh($git . "rev-parse --abbrev-ref '@{u}'")), 'hash' => $hash, 'ts' => (int) $ts, 'subject' => $subject,
         'behind' => $behind, 'dirty' => trim(sh($git . 'status --porcelain --untracked-files=no')) !== '']);
 }
