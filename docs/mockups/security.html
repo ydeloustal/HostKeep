@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sécurité · Maquette Hostkeep</title>
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+<header class="top"><div class="brand"><span class="logo">H</span>Hostkeep</div>
+<span class="pill crit">2</span>
+<button class="icon-btn" aria-label="Rafraîchir"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7L20 8.5"/><path d="M20 3.5v5h-5"/></svg></button>
+<button class="icon-btn" aria-label="Thème"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A8.5 8.5 0 1 1 10 3.5a6.5 6.5 0 0 0 10.5 10.5z"/></svg></button>
+<button class="icon-btn" aria-label="Se déconnecter"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></button></header>
+<main>
+<h1>Sécurité</h1><p class="desc">Audit, mises à jour, accès et journal.</p>
+<nav class="chips"><a href="#" class="on">Audit</a><a href="#" class="">Mises à jour</a><a href="#" class="">Accès</a><a href="#" class="">Journal</a></nav>
+<h2>Audit <button class="btn">Lancer le scan</button></h2>
+<div class="stats">
+  <div class="stat bad"><div class="l">Critiques</div><div class="v">1</div><div class="s">scan il y a 8 h</div></div>
+  <div class="stat"><div class="l">IP bannies</div><div class="v">2</div><div class="s">140 au total</div></div>
+</div>
+<div class="stack" style="margin-top:10px">
+<div class="row"><div class="head"><span class="name">.env téléchargeable</span><span class="badge crit">critique</span></div><dl><dt>Site</dt><dd>api.example.com</dd><dt>Détail</dt><dd><span class="mono">/.env → 200</span></dd></dl></div>
+<div class="row"><div class="head"><span class="name">Dossier listable</span><span class="badge warn">à corriger</span></div><dl><dt>Site</dt><dd>blog.example.com</dd><dt>Détail</dt><dd><span class="mono">/uploads/</span></dd></dl></div>
+</div>
+<h2>Mises à jour</h2>
+<div class="card"><div class="head" style="display:flex;justify-content:space-between"><strong>3 paquets</strong><span class="badge warn">1 de sécurité</span></div>
+<p class="muted small" style="margin:6px 0 12px">openssl, curl, tzdata</p><button class="btn primary block">Tout installer (3)</button></div>
+</main>
+<nav class="tabs" aria-label="Sections"><a href="home.html" class=""><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Accueil</a><a href="sites.html" class=""><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>Sites</a><a href="system.html" class=""><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Système</a><a href="security.html" class="on"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s8-3.5 8-10V5l-8-3-8 3v6c0 6.5 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>Sécurité</a><a href="data.html" class=""><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>Données</a></nav>
+</body>
+</html>

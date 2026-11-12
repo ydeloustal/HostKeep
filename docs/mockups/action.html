@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Action en cours · Maquette Hostkeep</title>
+<link rel="stylesheet" href="mockup.css">
+</head>
+<body>
+<header class="top"><div class="brand"><span class="logo">H</span>Hostkeep</div>
+<span class="pill crit">2</span>
+<button class="icon-btn" aria-label="Rafraîchir"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7L20 8.5"/><path d="M20 3.5v5h-5"/></svg></button>
+<button class="icon-btn" aria-label="Thème"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A8.5 8.5 0 1 1 10 3.5a6.5 6.5 0 0 0 10.5 10.5z"/></svg></button>
+<button class="icon-btn" aria-label="Se déconnecter"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg></button></header>
+<main>
+<h1>Système</h1><p class="desc">Services, applis, performances et disque.</p>
+<div class="stack" style="margin-top:20px"><div class="row"><div class="head"><span class="name">apache2</span><span class="badge ok">actif</span></div><dl><dt>Mémoire</dt><dd>180 Mo</dd></dl></div></div>
+</main>
+<div class="scrim"></div>
+<div class="sheet" role="dialog" aria-modal="true" aria-label="Restart apache2">
+  <div class="grab"></div>
+  <h3>Restart apache2 <button class="icon-btn" aria-label="Fermer"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></h3>
+  <span><span class="badge ok">terminé avec succès</span></span>
+  <pre class="log">### 2026-11-12 10:04 — service restart apache2
+# apache2ctl configtest
+Syntax OK
+# systemctl restart apache2
+● apache2.service - The Apache HTTP Server
+     Active: active (running)
+### Terminé (code 0)</pre>
+  <button class="btn block">Fermer</button>
+</div>
+<nav class="tabs" aria-label="Sections"><a href="home.html" class=""><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Accueil</a><a href="sites.html" class=""><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>Sites</a><a href="system.html" class="on"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Système</a><a href="security.html" class=""><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s8-3.5 8-10V5l-8-3-8 3v6c0 6.5 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>Sécurité</a><a href="data.html" class=""><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>Données</a></nav>
+</body>
+</html>
