@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Collector, run as root by /etc/cron.d/hostkeep:
+ * Collector, run as root by the systemd timers hostkeep-*.timer:
  *   minute : metrics, services, processes
  *   5min   : sites (HTTP checks), certificates, PM2, security, databases
  *   hourly : storage, cron, pending updates, list of logs
@@ -15,6 +15,7 @@ if (PHP_SAPI !== 'cli' || posix_geteuid() !== 0) {
     fwrite(STDERR, "À lancer en root, en ligne de commande.\n");
     exit(1);
 }
+require __DIR__ . '/../src/env.php';
 require __DIR__ . '/../src/live.php';
 require __DIR__ . '/../src/collect_extra.php';
 
@@ -101,8 +102,11 @@ function c_metrics(): void
 function c_services(): void
 {
     $pm2 = lines(sh("systemctl list-units --type=service --all --no-legend --plain 'pm2-*'"));
-    $units = ['apache2' => 'apache2', 'php8.4-fpm' => 'php8.4-fpm', 'mariadb' => 'mariadb', 'cron' => 'cron',
-        'fail2ban' => 'fail2ban', 'postfix@-' => 'postfix', 'ssh' => null];
+    $units = [];
+    foreach (managed_services() as $s) {
+        $units[$s === 'postfix' ? 'postfix@-' : $s] = $s;   // postfix runs as the instance postfix@-
+    }
+    $units['ssh'] = null;   // shown, never restarted from the web
     foreach ($pm2 as $l) {
         $units[preg_replace('/\.service$/', '', strtok($l, ' '))] = null;
     }
@@ -114,7 +118,7 @@ function c_services(): void
             $p[$k] = $v;
         }
         $p['action'] = $action;
-        $p['reload'] = in_array($action, ['apache2', 'php8.4-fpm', 'fail2ban', 'postfix', 'mariadb'], true);
+        $p['reload'] = $action !== null && $action !== 'cron';
         $out[] = $p;
     }
     $failed = array_map(fn($l) => strtok($l, ' '), lines(sh('systemctl --failed --no-legend --plain')));
@@ -319,7 +323,7 @@ function c_storage(): void
 function c_cron(): void
 {
     $tabs = [];
-    foreach (['root', 'mmi24c04', 'deploy', 'www-data'] as $u) {
+    foreach (array_map('basename', glob('/var/spool/cron/crontabs/*') ?: []) as $u) {
         $t = strip_comments(sh('crontab -l -u ' . escapeshellarg($u)));
         if ($t !== '') {
             $tabs[$u] = $t;

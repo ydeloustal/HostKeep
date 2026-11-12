@@ -519,9 +519,11 @@ B.logs = async () => {
 };
 
 B.files = async () => {
-  let path = sessionStorage.getItem('fspath') || '/var/www';
+  let path = sessionStorage.getItem('fspath') || '';
   const crumbs = el('div', { class: 'toolbar crumbs' }), list = el('div', {});
-  const roots = ['/var/www', '/home/mmi24c04/public_html', '/etc/apache2', '/etc/php/8.4', '/etc/mysql', '/etc/cron.d', '/etc/fail2ban', '/etc/letsencrypt/renewal', '/etc/logrotate.d', '/var/log'];
+  const roots = (await api({ r: 'fsroots' })).roots;   // HOSTKEEP_FILE_ROOTS, filtered by the root helper
+  if (!roots.length) return card(null, el('p', { class: 'empty' }, 'Aucun dossier autorisé (HOSTKEEP_FILE_ROOTS).'));
+  if (!roots.some(r => path === r || path.startsWith(`${r}/`))) path = roots[0];
   const rootSel = el('select', { 'aria-label': 'Racine', onchange: () => go(rootSel.value) }, roots.map(r => el('option', { value: r }, r)));
   const dlUrl = p => `/api.php?${new URLSearchParams({ r: 'fsdl', path: p })}`;
   const view = async p => {
@@ -550,7 +552,7 @@ B.files = async () => {
             : entry('file', e.name, () => view(full));
         return [nameCell, e.type === 'file' ? fmtBytes(e.size) : '', el('span', { class: 'small' }, fmtDate(e.mtime)), el('span', { class: 'mono small', title: `${e.owner}:${e.group}` }, `${e.mode} ${e.owner}`)];
       })], 'Dossier vide.'), r.total > r.entries.length ? note(`${r.entries.length} premiers éléments sur ${r.total}.`) : null);
-    } catch (e) { render(list, el('div', { class: 'error-box' }, `Erreur : ${e.message}`)); if (p !== '/var/www') sessionStorage.removeItem('fspath'); }
+    } catch (e) { render(list, el('div', { class: 'error-box' }, `Erreur : ${e.message}`)); if (p !== roots[0]) sessionStorage.removeItem('fspath'); }
   };
   go(path);
   return card(null, [crumbs, list, note('Lecture seule. Les clés privées ne sont jamais lisibles.')]);

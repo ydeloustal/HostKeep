@@ -15,14 +15,30 @@ JOBS=/var/lib/hostkeep/jobs
 APP=/var/www/hostkeep
 BACKUPS=/var/backups/hostkeep
 SELF=/usr/local/sbin/hostkeep-action
-SERVICES="apache2 php8.4-fpm mariadb fail2ban cron postfix"
-RELOADABLE="apache2 php8.4-fpm mariadb fail2ban postfix"
+
+# Settings from the install's .env (KEY=value). Read with grep, never sourced: nothing is executed.
+env_get() {
+  local v
+  v=$(grep -m1 -E "^[[:space:]]*$1[[:space:]]*=" "$APP/.env" 2>/dev/null | cut -d= -f2- | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+  v=${v#[\"\']}; v=${v%[\"\']}
+  printf '%s' "${v:-${2:-}}"
+}
+PHPV=$(env_get HOSTKEEP_PHP_VERSION "$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null)")
+detect_services() {
+  local s out=()
+  for s in apache2 nginx "php$PHPV-fpm" mariadb mysql fail2ban cron postfix; do
+    [[ $s == mysql ]] && in_list mariadb "${out[@]}" && continue   # alias of mariadb on Debian
+    systemctl cat "$s.service" >/dev/null 2>&1 && out+=("$s")
+  done
+  echo "${out[*]}"
+}
 
 die() { echo "Refusé : $*" >&2; exit 2; }
 in_list() { local x=$1; shift; local i; for i in "$@"; do [[ $i == "$x" ]] && return 0; done; return 1; }
 pm2_names() { pm2 jlist 2>/dev/null | python3 -c 'import json,sys; [print(p["name"]) for p in json.load(sys.stdin)]' 2>/dev/null; }
 jails() { fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:[[:space:]]*//p' | tr ',' '\n' | tr -d ' \t'; }
 valid_ip() { python3 -I -c 'import ipaddress,sys; ipaddress.ip_address(sys.argv[1])' "$1" 2>/dev/null; }
+services() { local s; s=$(env_get HOSTKEEP_SERVICES); if [[ -n $s ]]; then echo "$s"; else detect_services; fi; }
 
 validate() {
   local verb=${1:-}; shift || true
@@ -30,8 +46,8 @@ validate() {
     service)
       [[ $# -eq 2 ]] || die "arguments"
       in_list "$1" restart reload || die "action de service inconnue"
-      in_list "$2" $SERVICES || die "service non autorisé"
-      if [[ $1 == reload ]]; then in_list "$2" $RELOADABLE || die "reload non supporté pour $2"; fi ;;
+      in_list "$2" $(services) || die "service non autorisé"
+      if [[ $1 == reload && $2 == cron ]]; then die "reload non supporté pour cron"; fi ;;
     pm2-restart)
       [[ $# -eq 1 && $1 =~ ^[A-Za-z0-9._-]{1,64}$ ]] || die "nom d'appli"
       in_list "$1" $(pm2_names) || die "appli PM2 inconnue" ;;
@@ -66,6 +82,7 @@ run() {
   case $verb in
     service)
       if [[ $2 == apache2 ]]; then configtest || { echo "configtest en échec : rien n'a été fait."; return 1; }; fi
+      if [[ $2 == nginx ]]; then echo "# nginx -t"; nginx -t 2>&1 || { echo "nginx -t en échec : rien n'a été fait."; return 1; }; fi
       echo "# systemctl $1 $2"
       systemctl "$1" "$2" || return 1
       sleep 1; systemctl --no-pager --lines=0 status "$2" | head -6 ;;
@@ -116,7 +133,11 @@ run() {
 }
 
 # Read-only file access, limited to these trees (after resolving symlinks and "..").
-FS_ROOTS="/var/www /home/mmi24c04/public_html /etc/apache2 /etc/php/8.4 /etc/mysql /etc/cron.d /etc/fail2ban /etc/letsencrypt/renewal /etc/logrotate.d /var/log"
+# HOSTKEEP_FILE_ROOTS in .env; only the folders that exist are kept.
+FS_ROOTS=""
+for r in $(env_get HOSTKEEP_FILE_ROOTS "/var/www /etc/apache2 /etc/nginx /etc/php /etc/mysql /etc/cron.d /etc/fail2ban /etc/letsencrypt/renewal /etc/logrotate.d /var/log"); do
+  [[ $r == /* && -d $r ]] && FS_ROOTS+="$(realpath -e -- "$r") "
+done
 fs_path() {
   local p r
   [[ ${1:-} == /* && ${#1} -lt 4096 ]] || { echo "Refusé : chemin" >&2; return 2; }
@@ -134,7 +155,7 @@ case $cmd in
     id="$(date +%s)-$$"
     log="$JOBS/$id.log"
     : > "$log" && chgrp hostkeep "$log" && chmod 640 "$log" || die "impossible de créer le journal de la tâche"
-    # Transient unit: the job lives outside PHP-FPM's cgroup, so restarting php8.4-fpm does not kill it.
+    # Transient unit: the job lives outside PHP-FPM's cgroup, so restarting php-fpm does not kill it.
     systemd-run --quiet --collect --unit="hostkeep-job-$id" -p StandardOutput="append:$log" -p StandardError=inherit \
       "$SELF" _run "$id" "$@" >/dev/null || die "systemd-run a échoué"
     echo "$id" ;;

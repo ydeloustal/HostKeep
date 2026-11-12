@@ -244,9 +244,9 @@ function c_perf(): void
             $sockets[$s[1]][] = $n[1];
         }
     }
-    $fpmLog = (string) @file_get_contents('/var/log/php8.4-fpm.log');
+    $fpmLog = (string) @file_get_contents('/var/log/php' . php_version() . '-fpm.log');
     $conf = [];
-    foreach (glob('/etc/php/8.4/fpm/pool.d/*.conf') ?: [] as $f) {
+    foreach (glob('/etc/php/' . php_version() . '/fpm/pool.d/*.conf') ?: [] as $f) {
         $name = null;
         foreach (file($f) as $l) {
             if (preg_match('/^\s*\[([^\]]+)\]/', $l, $m)) {
@@ -259,7 +259,7 @@ function c_perf(): void
     $poolRows = [];
     foreach ($conf as $name => $c) {
         $sites = array_values(array_unique($sockets[$c['listen'] ?? ''] ?? []));
-        if (($c['listen'] ?? '') === '/run/php/php8.4-fpm.sock') {
+        if (($c['listen'] ?? '') === '/run/php/php' . php_version() . '-fpm.sock') {
             $sites[] = 'tous les autres sites PHP';
         }
         preg_match_all('/\[pool ' . preg_quote($name, '/') . '\] server reached pm\.max_children/', $fpmLog, $w);

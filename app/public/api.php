@@ -57,6 +57,9 @@ try {
             $res = fs_list((string) ($_GET['path'] ?? '/var/www'));
             json_out($res, isset($res['error']) ? 400 : 200);
 
+        case 'fsroots':
+            json_out(['roots' => fs_roots()]);
+
         case 'fsread':
             $res = fs_read((string) ($_GET['path'] ?? ''));
             json_out($res, isset($res['error']) ? 400 : 200);
@@ -150,7 +153,7 @@ function overview(): array
     };
 
     if (!$last || time() - (int) $last['ts'] > 180) {
-        $add('warn', 'Le collecteur ne remonte plus de mesures (cron /etc/cron.d/hostkeep).', 'overview');
+        $add('warn', 'Le collecteur ne remonte plus de mesures (timers systemd hostkeep-*).', 'overview');
     }
     if ($last) {
         $diskPct = 100 * $last['disk_used'] / max(1, $last['disk_total']);
