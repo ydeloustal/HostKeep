@@ -1,0 +1,3 @@
+# Hostkeep: the web app (user "hostkeep") may only run the validated root helper.
+Defaults:hostkeep !requiretty
+hostkeep ALL=(root) NOPASSWD: /usr/local/sbin/hostkeep-action

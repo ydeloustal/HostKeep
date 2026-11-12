@@ -7,7 +7,7 @@ const FAIL_WINDOW = 900;     // ... within 15 min
 
 function start_session(): void
 {
-    session_name('dashsid');
+    session_name('hksid');
     session_set_cookie_params(['lifetime' => 0, 'path' => '/', 'secure' => true, 'httponly' => true, 'samesite' => 'Strict']);
     ini_set('session.use_strict_mode', '1');
     session_start();
@@ -52,9 +52,9 @@ function record_attempt(string $ip, bool $ok, string $user): void
 {
     db()->prepare('INSERT INTO login_attempts (ip, ts, ok) VALUES (?, ?, ?)')->execute([$ip, time(), $ok ? 1 : 0]);
     if (!$ok) {
-        // Line format matched by the fail2ban filter "dashboard".
+        // Line format matched by the fail2ban filter "hostkeep".
         $u = preg_replace('/[^A-Za-z0-9_.@-]/', '?', substr($user, 0, 40));
-        @file_put_contents(AUTH_LOG, date('c') . " dashboard auth failure from $ip user=$u\n", FILE_APPEND | LOCK_EX);
+        @file_put_contents(AUTH_LOG, date('c') . " hostkeep auth failure from $ip user=$u\n", FILE_APPEND | LOCK_EX);
     }
 }
 
@@ -64,7 +64,7 @@ function attempt_login(string $user, string $pass): bool|string
     $ip = client_ip();
     $hash = (string) (cfg()['password_hash'] ?? '');
     if ($hash === '') {
-        return 'Aucun mot de passe défini. Sur le serveur : sudo php /var/www/admin-dashboard/bin/set-password.php';
+        return 'Aucun mot de passe défini. Sur le serveur : sudo php /var/www/hostkeep/bin/set-password.php';
     }
     if (too_many_attempts($ip)) {
         return 'Trop de tentatives. Réessaie dans 15 minutes.';

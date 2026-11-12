@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Collector, run as root by /etc/cron.d/dashboard:
+ * Collector, run as root by /etc/cron.d/hostkeep:
  *   minute : metrics, services, processes
  *   5min   : sites (HTTP checks), certificates, PM2, security, databases
  *   hourly : storage, cron, pending updates, list of logs
@@ -18,7 +18,7 @@ if (PHP_SAPI !== 'cli' || posix_geteuid() !== 0) {
 require __DIR__ . '/../src/live.php';
 require __DIR__ . '/../src/collect_extra.php';
 
-const STATE = '/var/lib/dashboard/state.json';
+const STATE = '/var/lib/hostkeep/state.json';
 putenv('PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin');
 putenv('HOME=/root');
 putenv('PM2_HOME=/root/.pm2');
@@ -39,12 +39,12 @@ if (!isset($modes[$mode])) {
     exit(1);
 }
 
-$lock = fopen("/var/lib/dashboard/collect-$mode.lock", 'c');
+$lock = fopen("/var/lib/hostkeep/collect-$mode.lock", 'c');
 if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
     exit(0);   // previous run still going
 }
 
-$pdo = new PDO('mysql:unix_socket=/run/mysqld/mysqld.sock;dbname=dashboard;charset=utf8mb4', 'root', '', [
+$pdo = new PDO('mysql:unix_socket=/run/mysqld/mysqld.sock;dbname=hostkeep;charset=utf8mb4', 'root', '', [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
 ]);
 
@@ -215,7 +215,7 @@ function c_sites(): void
 
     $enabled = array_map(fn($f) => basename((string) (realpath($f) ?: $f), '.conf'), glob('/etc/apache2/sites-enabled/*.conf') ?: []);
     $available = array_map(fn($f) => basename($f, '.conf'), glob('/etc/apache2/sites-available/*.conf') ?: []);
-    save('sites', ['sites' => array_values($sites), 'disabled' => array_values(array_diff($available, $enabled)), 'self' => 'admin-dashboard']);
+    save('sites', ['sites' => array_values($sites), 'disabled' => array_values(array_diff($available, $enabled)), 'self' => 'hostkeep']);
 }
 
 function c_certs(): void
@@ -353,7 +353,7 @@ function c_logkeys(): void
 {
     $keys = [['key' => 'journal-errors', 'label' => 'systemd — erreurs récentes', 'size' => null],
         ['key' => 'fail2ban', 'label' => 'fail2ban', 'size' => @filesize('/var/log/fail2ban.log') ?: null],
-        ['key' => 'dashboard-auth', 'label' => 'Dashboard — échecs de connexion', 'size' => @filesize('/var/log/dashboard/auth.log') ?: null]];
+        ['key' => 'hostkeep-auth', 'label' => 'Hostkeep — échecs de connexion', 'size' => @filesize('/var/log/hostkeep/auth.log') ?: null]];
     foreach (glob('/var/log/apache2/*.log') ?: [] as $f) {
         $b = basename($f);
         if (preg_match('/^[A-Za-z0-9._-]+$/', $b)) {
@@ -380,7 +380,7 @@ function c_purge(): void
     foreach (['traffic_daily', 'traffic_visitors', 'traffic_top'] as $t) {
         $pdo->exec("DELETE FROM $t WHERE day < '$day'");
     }
-    foreach (glob('/var/lib/dashboard/jobs/*') ?: [] as $f) {
+    foreach (glob('/var/lib/hostkeep/jobs/*') ?: [] as $f) {
         if (filemtime($f) < $now - 7 * 86400) {
             @unlink($f);
         }

@@ -1,3 +1,0 @@
-# Admin dashboard: the web app (user "dashboard") may only run the validated root helper.
-Defaults:dashboard !requiretty
-dashboard ALL=(root) NOPASSWD: /usr/local/sbin/dashboard-action

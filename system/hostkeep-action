@@ -1,20 +1,20 @@
 #!/bin/bash
-# Root helper of the admin dashboard. Only user "dashboard" may run it, through sudo
-# (/etc/sudoers.d/dashboard). It runs a fixed allow-list of actions and validates every
+# Root helper of the Hostkeep. Only user "hostkeep" may run it, through sudo
+# (/etc/sudoers.d/hostkeep). It runs a fixed allow-list of actions and validates every
 # argument itself. There is no generic command execution.
 #
-#   dashboard-action job <verb> [args...]   validate, then run in the background (systemd-run), print the job id
-#   dashboard-action log <key> [lines]      print the tail of an allowed log
+#   hostkeep-action job <verb> [args...]   validate, then run in the background (systemd-run), print the job id
+#   hostkeep-action log <key> [lines]      print the tail of an allowed log
 #
 # Never touches: sshd, network, firewall, reboot, certificate deletion.
 set -uo pipefail
 umask 027
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C HOME=/root PM2_HOME=/root/.pm2
 
-JOBS=/var/lib/dashboard/jobs
-APP=/var/www/admin-dashboard
-BACKUPS=/var/backups/dashboard-db
-SELF=/usr/local/sbin/dashboard-action
+JOBS=/var/lib/hostkeep/jobs
+APP=/var/www/hostkeep
+BACKUPS=/var/backups/hostkeep
+SELF=/usr/local/sbin/hostkeep-action
 SERVICES="apache2 php8.4-fpm mariadb fail2ban cron postfix"
 RELOADABLE="apache2 php8.4-fpm mariadb fail2ban postfix"
 
@@ -40,7 +40,7 @@ validate() {
       in_list "$1" enable disable || die "action de site inconnue"
       [[ $2 =~ ^[A-Za-z0-9._-]{1,100}$ ]] || die "nom de vhost"
       [[ -f /etc/apache2/sites-available/$2.conf ]] || die "vhost inconnu"
-      [[ $2 == admin-dashboard* ]] && die "le vhost du tableau de bord est protégé"
+      [[ $2 == hostkeep* ]] && die "le vhost du tableau de bord est protégé"
       return 0 ;;
     certbot)
       [[ $# -eq 1 ]] && in_list "$1" dry-run renew || die "action certbot" ;;
@@ -93,11 +93,11 @@ run() {
     backup-now)
       php "$APP/bin/collect.php" backup && echo "Sauvegarde terminée." ;;
     backup-restore)
-      mkdir -p "$BACKUPS/pre-restore" && chgrp dashboard "$BACKUPS/pre-restore" && chmod 750 "$BACKUPS/pre-restore"
+      mkdir -p "$BACKUPS/pre-restore" && chgrp hostkeep "$BACKUPS/pre-restore" && chmod 750 "$BACKUPS/pre-restore"
       pre="$BACKUPS/pre-restore/$(date +%Y%m%d-%H%M%S)-$2.sql.gz"
       echo "# Copie de sécurité de l'état actuel de $2 -> $pre"
       bash -c 'set -o pipefail; mysqldump --single-transaction --quick --routines --triggers --events "$1" | gzip -6 > "$2"' _ "$2" "$pre" || { echo "Copie de sécurité impossible : restauration annulée."; rm -f "$pre"; return 1; }
-      chgrp dashboard "$pre"; chmod 640 "$pre"
+      chgrp hostkeep "$pre"; chmod 640 "$pre"
       echo "# Restauration de $2 depuis la sauvegarde du $1"
       gunzip -c "$BACKUPS/$1/$2.sql.gz" | mysql "$2" || return 1
       php "$APP/bin/collect.php" backup-list >/dev/null 2>&1; echo "Restauration terminée." ;;
@@ -133,9 +133,9 @@ case $cmd in
     validate "$@"
     id="$(date +%s)-$$"
     log="$JOBS/$id.log"
-    : > "$log" && chgrp dashboard "$log" && chmod 640 "$log" || die "impossible de créer le journal de la tâche"
+    : > "$log" && chgrp hostkeep "$log" && chmod 640 "$log" || die "impossible de créer le journal de la tâche"
     # Transient unit: the job lives outside PHP-FPM's cgroup, so restarting php8.4-fpm does not kill it.
-    systemd-run --quiet --collect --unit="dashboard-job-$id" -p StandardOutput="append:$log" -p StandardError=inherit \
+    systemd-run --quiet --collect --unit="hostkeep-job-$id" -p StandardOutput="append:$log" -p StandardError=inherit \
       "$SELF" _run "$id" "$@" >/dev/null || die "systemd-run a échoué"
     echo "$id" ;;
   _run)
@@ -145,14 +145,14 @@ case $cmd in
     echo "### $(date '+%F %T') — $*"
     run "$@"; rc=$?
     echo "### Terminé (code $rc)"
-    echo "$rc" > "$JOBS/$id.rc.tmp" && chgrp dashboard "$JOBS/$id.rc.tmp" && chmod 640 "$JOBS/$id.rc.tmp" && mv "$JOBS/$id.rc.tmp" "$JOBS/$id.rc" ;;
+    echo "$rc" > "$JOBS/$id.rc.tmp" && chgrp hostkeep "$JOBS/$id.rc.tmp" && chmod 640 "$JOBS/$id.rc.tmp" && mv "$JOBS/$id.rc.tmp" "$JOBS/$id.rc" ;;
   log)
     key=${1:-}; n=${2:-200}
     [[ $n =~ ^[0-9]{1,4}$ ]] || die "nombre de lignes"
     case $key in
       journal-errors) journalctl -p err -n "$n" --no-pager -o short-iso ;;
       fail2ban) tail -n "$n" /var/log/fail2ban.log ;;
-      dashboard-auth) tail -n "$n" /var/log/dashboard/auth.log 2>/dev/null || true ;;
+      hostkeep-auth) tail -n "$n" /var/log/hostkeep/auth.log 2>/dev/null || true ;;
       apache:*)
         f=${key#apache:}
         [[ $f =~ ^[A-Za-z0-9._-]+\.log$ && -f /var/log/apache2/$f && ! -L /var/log/apache2/$f ]] || die "journal inconnu"

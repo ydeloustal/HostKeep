@@ -1,5 +1,5 @@
 'use strict';
-/* Admin VPS — vanilla JS front-end. All dynamic text goes through textContent (no innerHTML with data). */
+/* Hostkeep — vanilla JS front-end. All dynamic text goes through textContent (no innerHTML with data). */
 
 const CSRF = document.querySelector('meta[name="csrf"]').content;
 const content = document.getElementById('content');
@@ -479,7 +479,7 @@ B.backups = async () => {
       stats(
         stat('Dernière', last ? new Date(`${last}T12:00:00`).toLocaleDateString('fr-FR') : 'aucune', 'chaque nuit à 3 h 10', undefined, !last ? 'bad' : ''),
         stat('Espace', fmtBytes(d.total), `${d.days?.length ?? 0} jour(s) / ${d.keep ?? 7} max`),
-        stat('Emplacement', 'Ce serveur', d.dir || '/var/backups/dashboard-db')),
+        stat('Emplacement', 'Ce serveur', d.dir || '/var/backups/hostkeep')),
       card(null, (d.days || []).length ? d.days.map(day => el('details', { open: day === d.days[0] ? true : null },
         el('summary', {}, el('strong', {}, new Date(`${day.day}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })), el('span', { class: 'muted small' }, ` — ${day.files.length} base(s), ${fmtBytes(day.size)}`)),
         table(['Base', { label: 'Taille', num: true }, 'Faite à', ''], day.files.map(f => [el('strong', {}, f.db), fmtBytes(f.size), fmtDate(f.mtime),
@@ -586,7 +586,7 @@ async function renderPage(page) {
   document.querySelectorAll('[data-nav]').forEach(a => a.toggleAttribute('aria-current', a.dataset.nav === page));
   document.getElementById('page-title').textContent = P.title;
   document.getElementById('page-desc').textContent = P.desc;
-  document.title = `${P.title} · Admin VPS`;
+  document.title = `${P.title} · Hostkeep`;
   chips.replaceChildren(...P.blocks.map(([id, label]) => el('a', { href: `#${page}/${id}`, 'data-chip': id }, label)));
 
   observer = new IntersectionObserver(entries => {

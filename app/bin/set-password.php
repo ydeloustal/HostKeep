@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** Sets the dashboard login. Run it yourself on the server: sudo php /var/www/admin-dashboard/bin/set-password.php */
+/** Sets the hostkeep login. Run it yourself on the server: sudo php /var/www/hostkeep/bin/set-password.php */
 
 if (PHP_SAPI !== 'cli' || posix_geteuid() !== 0) {
     fwrite(STDERR, "À lancer avec sudo, en ligne de commande.\n");
@@ -43,7 +43,7 @@ $cfg['password_hash'] = password_hash($p1, PASSWORD_DEFAULT);
 $tmp = "$file.tmp";
 file_put_contents($tmp, "<?php\nreturn " . var_export($cfg, true) . ";\n");
 chown($tmp, 'root');
-chgrp($tmp, 'dashboard');
+chgrp($tmp, 'hostkeep');
 chmod($tmp, 0640);
 rename($tmp, $file);
 echo "Mot de passe enregistré pour « $user ». Tu peux te connecter.\n";

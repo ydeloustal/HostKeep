@@ -82,7 +82,7 @@ try {
             json_out(['error' => 'route inconnue'], 404);
     }
 } catch (Throwable $e) {
-    error_log('dashboard: ' . $e->getMessage());
+    error_log('hostkeep: ' . $e->getMessage());
     json_out(['error' => 'Erreur serveur : ' . $e->getMessage()], 500);
 }
 
@@ -150,7 +150,7 @@ function overview(): array
     };
 
     if (!$last || time() - (int) $last['ts'] > 180) {
-        $add('warn', 'Le collecteur ne remonte plus de mesures (cron /etc/cron.d/dashboard).', 'overview');
+        $add('warn', 'Le collecteur ne remonte plus de mesures (cron /etc/cron.d/hostkeep).', 'overview');
     }
     if ($last) {
         $diskPct = 100 * $last['disk_used'] / max(1, $last['disk_total']);

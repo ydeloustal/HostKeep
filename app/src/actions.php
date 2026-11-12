@@ -21,7 +21,7 @@ const ACTIONS = [
     'apt-upgrade'    => [],
 ];
 
-const BACKUP_DIR = '/var/backups/dashboard-db';
+const BACKUP_DIR = '/var/backups/hostkeep';
 
 function valid_fs_path(mixed $p): bool
 {
@@ -167,7 +167,7 @@ function job_status(string $id): array
 
 function read_log(string $key, int $lines): array
 {
-    if (!preg_match('/^(journal-errors|fail2ban|dashboard-auth|apache:[A-Za-z0-9._-]+|pm2:[A-Za-z0-9._-]+)$/D', $key)) {
+    if (!preg_match('/^(journal-errors|fail2ban|hostkeep-auth|apache:[A-Za-z0-9._-]+|pm2:[A-Za-z0-9._-]+)$/D', $key)) {
         return ['error' => 'journal inconnu'];
     }
     $r = run_helper(['log', $key, (string) max(10, min(2000, $lines))]);

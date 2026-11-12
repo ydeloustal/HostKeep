@@ -1,4 +1,4 @@
-# Admin dashboard: slow query log (queries over 1 s), read by the "Performances" page.
+# Hostkeep: slow query log (queries over 1 s), read by the "Performances" page.
 [mariadb]
 slow_query_log = 1
 slow_query_log_file = /var/log/mysql/mariadb-slow.log
