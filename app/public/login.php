@@ -38,8 +38,8 @@ $token = csrf_token();
 <body class="login-page">
 <main class="login-card">
   <img src="/assets/favicon.svg" alt="" class="login-logo">
-  <h1>Hostkeep</h1>
-  <p class="muted"><?= h(gethostname() ?: 'serveur') ?></p>
+  <h1>Connexion à Hostkeep</h1>
+  <p class="muted">Serveur <span class="mono"><?= h(gethostname() ?: 'serveur') ?></span></p>
   <?php if ($error !== ''): ?><p class="form-error" role="alert"><?= h($error) ?></p><?php endif; ?>
   <form method="post" autocomplete="on">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
@@ -47,6 +47,7 @@ $token = csrf_token();
     <label>Mot de passe<input name="pass" type="password" autocomplete="current-password" required></label>
     <button type="submit" class="btn primary">Se connecter</button>
   </form>
+  <p class="login-note">Les échecs répétés entraînent un bannissement temporaire de l'adresse IP.</p>
 </main>
 </body>
 </html>

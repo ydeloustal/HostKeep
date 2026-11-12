@@ -19,6 +19,7 @@ const ACTIONS = [
     'security-scan'  => [],
     'apt-update'     => [],
     'apt-upgrade'    => [],
+    'self-update'    => [],
 ];
 
 const BACKUP_DIR = '/var/backups/hostkeep';

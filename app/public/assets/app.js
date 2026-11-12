@@ -52,6 +52,9 @@ const ICONS = {
   data: [['ellipse', { cx: 12, cy: 5, rx: 8, ry: 3 }], ['path', { d: 'M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3' }]],
   refresh: [['path', { d: 'M20 12a8 8 0 1 1-2.3-5.7L20 8.5' }], ['path', { d: 'M20 3.5v5h-5' }]],
   theme: [['path', { d: 'M20.5 14A8.5 8.5 0 1 1 10 3.5a6.5 6.5 0 0 0 10.5 10.5z' }]],
+  sun: [['circle', { cx: 12, cy: 12, r: 4 }], ['path', { d: 'M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4' }]],
+  alert: [['path', { d: 'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z' }], ['path', { d: 'M12 9v4M12 17h.01' }]],
+  chevron: [['path', { d: 'm9 6 6 6-6 6' }]],
   logout: [['path', { d: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9' }]],
   x: [['path', { d: 'M18 6 6 18M6 6l12 12' }]],
   folder: [['path', { d: 'M3 6a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z' }]],
@@ -99,8 +102,17 @@ function cell(h, content) {
   if (td.children.length && [...td.children].every(k => k.matches('.btn'))) td.classList.add('actions-cell');
   return td;
 }
-function stat(label, value, sub, p, cls) {
-  return el('div', { class: `stat ${cls || ''}` }, el('div', { class: 'label' }, label), el('div', { class: 'value' }, value), sub ? el('div', { class: 'sub' }, sub) : null, p !== undefined ? bar(p) : null);
+function stat(label, value, sub, p, cls, trend) {
+  return el('div', { class: `stat ${cls || ''}` }, el('div', { class: 'label' }, label), el('div', { class: 'value' }, value), trend ? spark(trend) : null, sub ? el('div', { class: 'sub' }, sub) : null, p !== undefined ? bar(p) : null);
+}
+/* Tiny trend line of the last live samples (no axes: the value above gives the scale). */
+function spark(vals) {
+  if (vals.length < 2) return null;
+  const W = 200, H = 32, max = Math.max(...vals, 1e-9), min = Math.min(...vals, 0);
+  const pts = vals.map((v, i) => `${(i * W / (vals.length - 1)).toFixed(1)},${(H - 2 - (v - min) / (max - min || 1) * (H - 4)).toFixed(1)}`).join(' ');
+  return el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'spark', preserveAspectRatio: 'none', 'aria-hidden': 'true' },
+    el('polyline', { points: `0,${H} ${pts} ${W},${H}`, class: 'spark-area' }),
+    el('polyline', { points: pts, class: 'spark-line', 'vector-effect': 'non-scaling-stroke' }));
 }
 const stats = (...s) => el('div', { class: 'stats' }, s);
 const stale = upd => el('p', { class: 'muted small' }, `Données collectées ${ago(upd)}.`);
@@ -205,29 +217,42 @@ const LEGACY = {
   overview: 'home', resources: 'home/history', processes: 'home/processes', services: 'system/services', pm2: 'system/pm2',
   sites: 'sites/sites', traffic: 'sites/traffic', certs: 'sites/certs', databases: 'data/databases', backups: 'data/backups',
   perf: 'system/perf', storage: 'system/storage', files: 'data/files', logs: 'data/logs', security: 'security/audit',
-  updates: 'security/updates', cron: 'system/pm2', audit: 'security/journal',
+  updates: 'security/updates', cron: 'system/pm2', audit: 'security/journal', panel: 'security/panel',
 };
 
+const liveHist = [];   // last live samples, kept across page changes for the trend lines
 B.summary = async () => {
   const [ov, live] = await Promise.all([api({ r: 'overview' }), api({ r: 'live' }, { poll: true })]);
   const m = ov.metric || {};
-  const box = el('div', { class: 'stats' });
+  const box = el('div', { class: 'stats kpis' });
   const draw = l => {
     const memUsed = l.mem_total - l.mem_avail;
+    liveHist.push({ cpu: l.cpu, mem: pct(memUsed, l.mem_total), net: l.net_rx + l.net_tx });
+    if (liveHist.length > 40) liveHist.shift();
+    const h = k => liveHist.map(x => x[k]);
     box.replaceChildren(
-      stat('CPU', `${l.cpu.toFixed(0)} %`, `charge ${l.load1.toFixed(2)} · ${l.cores} cœur${l.cores > 1 ? 's' : ''}`, l.cpu),
-      stat('RAM', `${pct(memUsed, l.mem_total).toFixed(0)} %`, `${fmtBytes(memUsed)} / ${fmtBytes(l.mem_total)}`, pct(memUsed, l.mem_total)),
+      stat('CPU', `${l.cpu.toFixed(0)} %`, `charge ${l.load1.toFixed(2)} · ${l.cores} cœur${l.cores > 1 ? 's' : ''}`, l.cpu, '', h('cpu')),
+      stat('RAM', `${pct(memUsed, l.mem_total).toFixed(0)} %`, `${fmtBytes(memUsed)} / ${fmtBytes(l.mem_total)}`, pct(memUsed, l.mem_total), '', h('mem')),
       stat('Disque', m.disk_total ? `${pct(m.disk_used, m.disk_total).toFixed(0)} %` : '–', m.disk_total ? `${fmtBytes(m.disk_used)} / ${fmtBytes(m.disk_total)}` : 'en attente', m.disk_total ? pct(m.disk_used, m.disk_total) : undefined),
-      stat('Réseau', `↓ ${fmtRate(l.net_rx)}`, `↑ ${fmtRate(l.net_tx)}`),
+      stat('Réseau', `↓ ${fmtRate(l.net_rx)}`, `↑ ${fmtRate(l.net_tx)}`, undefined, '', h('net')),
       stat('Sites en ligne', `${ov.sites_up} / ${ov.sites_total}`, `uptime ${fmtDur(l.uptime)}`, undefined, ov.sites_up < ov.sites_total ? 'bad' : ''),
     );
   };
   draw(live);
   liveTimer = setInterval(async () => { try { draw(await api({ r: 'live' }, { poll: true })); } catch (e) { /* ignore */ } }, 5000);
   const alerts = ov.alerts.length
-    ? ov.alerts.map(a => el('a', { class: `alert ${a.level}`, href: `#${LEGACY[a.section] || 'home'}` }, badge({ crit: 'critique', warn: 'attention', info: 'info' }[a.level], a.level), el('span', {}, a.text), el('span', { class: 'go' }, el('span', { class: 'long' }, 'Voir '), '→')))
+    ? ov.alerts.map(a => el('a', { class: `alert ${a.level}`, href: `#${LEGACY[a.section] || 'home'}` }, badge({ crit: 'critique', warn: 'attention', info: 'info' }[a.level], a.level), el('span', {}, a.text), el('span', { class: 'go' }, el('span', { class: 'long' }, 'Voir '), icon('chevron'))))
     : [el('div', { class: 'alert ok' }, badge('OK', 'ok'), el('span', {}, 'Aucune alerte : tout fonctionne.'))];
-  return [box, el('div', { class: 'alerts' }, alerts), note(`${ov.host} · ${ov.os} · noyau ${ov.kernel}`)];
+  const list = el('div', { class: 'alerts', id: 'alerts' }, alerts);
+  /* Banner: the most urgent problems first, before the numbers. */
+  const crit = ov.alerts.filter(a => a.level === 'crit');
+  const banner = crit.length ? el('div', { class: 'banner crit', role: 'status' },
+    el('span', { class: 'banner-ico' }, icon('alert')),
+    el('div', { class: 'banner-text' },
+      el('strong', {}, `${crit.length} problème${crit.length > 1 ? 's' : ''} critique${crit.length > 1 ? 's' : ''} à traiter`),
+      el('span', {}, crit.map(a => a.text.replace(/\.$/, '')).join(' · '))),
+    el('button', { class: 'btn', onclick: () => list.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, 'Voir les alertes')) : null;
+  return [banner, box, list, note(`${ov.host} · ${ov.os} · noyau ${ov.kernel}`)];
 };
 
 B.history = async () => {
@@ -439,6 +464,31 @@ B.updates = async () => {
   };
 };
 
+B.panel = async () => {
+  const s = await section('panel');
+  const d = s.data || {};
+  if (!d.git) return [card(null, el('p', { class: 'empty' }, 'Le panel n\'a pas été installé depuis un clone git : la mise à jour depuis cette page est indisponible.')), stale(s.updated)];
+  const n = (d.behind || []).length;
+  const btn = actionBtn(n ? `Mettre à jour (${n})` : 'Vérifier et mettre à jour', 'self-update', [], {
+    cls: n ? 'primary' : '',
+    confirm: 'Récupérer la dernière version depuis GitHub (git pull) et réinstaller le panel ? La page sera indisponible quelques secondes.',
+  });
+  return {
+    actions: btn,
+    body: [
+      stats(
+        stat('Version installée', d.hash || '–', d.ts ? `${fmtDate(d.ts)} · ${d.subject}` : ''),
+        stat('Branche suivie', d.remote || d.branch || '–', d.source),
+        stat('Nouveautés', n ? String(n) : 'aucune', n ? 'en attente sur GitHub' : 'le panel est à jour', undefined, n ? 'warn-stat' : ''),
+      ),
+      d.dirty ? el('div', { class: 'alert warn' }, badge('attention', 'warn'), el('span', {}, `Des fichiers ont été modifiés à la main dans ${d.source} : la mise à jour sera refusée.`)) : null,
+      n ? card('À installer', table(['Commit', 'Date', 'Description'], d.behind.map(c => [el('span', { class: 'mono' }, c.hash), fmtDate(c.ts), c.subject]))) : null,
+      note('git pull (avance rapide uniquement) dans le dépôt source, puis ./install.sh app : la configuration (.env) et le mot de passe sont conservés.'),
+      stale(s.updated),
+    ],
+  };
+};
+
 B.access = async () => {
   const s = await section('security');
   const d = s.data || {};
@@ -569,7 +619,7 @@ const PAGES = {
   home: { title: 'Accueil', desc: 'L\'état du serveur en un coup d\'œil.', blocks: [['summary', 'En direct'], ['history', 'Historique'], ['processes', 'Processus']] },
   sites: { title: 'Sites', desc: 'Disponibilité, certificats HTTPS et fréquentation.', blocks: [['sites', 'Sites'], ['certs', 'Certificats'], ['traffic', 'Trafic']] },
   system: { title: 'Système', desc: 'Services, applis, performances et disque.', blocks: [['services', 'Services'], ['pm2', 'PM2 & tâches'], ['perf', 'Performances'], ['storage', 'Stockage']] },
-  security: { title: 'Sécurité', desc: 'Audit, mises à jour, accès et historique des actions.', blocks: [['audit', 'Audit'], ['updates', 'Mises à jour'], ['access', 'Accès'], ['journal', 'Journal d\'actions']] },
+  security: { title: 'Sécurité', desc: 'Audit, mises à jour, accès et historique des actions.', blocks: [['audit', 'Audit'], ['updates', 'Mises à jour'], ['panel', 'Version du panel'], ['access', 'Accès'], ['journal', 'Journal d\'actions']] },
   data: { title: 'Données', desc: 'Bases, sauvegardes, journaux et fichiers.', blocks: [['databases', 'Bases'], ['backups', 'Sauvegardes'], ['logs', 'Journaux'], ['files', 'Fichiers']] },
 };
 
@@ -621,7 +671,11 @@ async function renderPage(page) {
   });
   render(content, jobs.map(j => j[0]));
   await Promise.allSettled(jobs.map(j => j[1]()));
-  if (myId === renderId) document.getElementById('updated').textContent = `Mis à jour à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+  if (myId === renderId) {
+    const upd = document.getElementById('updated');
+    upd.textContent = `Mis à jour à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    upd.hidden = false;
+  }
 }
 
 async function route(force = false) {
@@ -649,6 +703,17 @@ async function refreshHealth() {
     pill.replaceChildren(el('span', { class: 'short' }, crit || warn || 'OK'), el('span', { class: 'long' }, long));
     pill.setAttribute('aria-label', long);
     pill.hidden = false;
+    /* Per-section counters in the navigation (critical + warning alerts). */
+    const counts = {};
+    for (const a of ov.alerts) if (a.level !== 'info') { const p = (LEGACY[a.section] || 'home').split('/')[0]; (counts[p] ||= { n: 0, crit: false }).n++; if (a.level === 'crit') counts[p].crit = true; }
+    document.querySelectorAll('[data-count]').forEach(c => {
+      const k = counts[c.dataset.count];
+      c.hidden = !k; c.textContent = k ? k.n : '';
+      c.className = `count ${k?.crit ? 'crit' : 'warn'}`;
+      c.setAttribute('aria-label', k ? `${k.n} alerte${k.n > 1 ? 's' : ''}` : '');
+    });
+    document.querySelector('.server')?.setAttribute('data-state', crit ? 'crit' : warn ? 'warn' : 'ok');
+    document.getElementById('server-sub').textContent = ov.os || '';
   } catch (e) { /* ignore */ }
 }
 
@@ -657,12 +722,20 @@ document.getElementById('refresh-btn').onclick = () => { route(true); refreshHea
 
 /* theme: system by default, toggle stored per browser */
 const root = document.documentElement;
+const isDark = () => root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+function syncThemeBtn() {
+  const dark = isDark();
+  document.getElementById('theme-lbl').textContent = dark ? 'Thème clair' : 'Thème sombre';
+  document.querySelector('#theme-btn .ico').replaceChildren(icon(dark ? 'sun' : 'theme'));
+}
 try { const t = localStorage.getItem('theme'); if (t) root.dataset.theme = t; } catch (e) { /* storage blocked */ }
 document.getElementById('theme-btn').onclick = () => {
-  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-  root.dataset.theme = dark ? 'light' : 'dark';
+  root.dataset.theme = isDark() ? 'light' : 'dark';
   try { localStorage.setItem('theme', root.dataset.theme); } catch (e) { /* ignore */ }
+  syncThemeBtn();
 };
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncThemeBtn);
+syncThemeBtn();
 
 route();
 refreshHealth();

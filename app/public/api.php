@@ -19,7 +19,7 @@ if ($isPost && !check_csrf()) {
 session_write_close();   // release the session lock: requests run in parallel
 
 const SECTIONS = ['services', 'processes', 'sites', 'certs', 'pm2', 'security', 'databases', 'storage', 'cron', 'updates', 'logkeys',
-    'backups', 'secscan', 'perf'];
+    'backups', 'secscan', 'perf', 'panel'];
 
 $r = (string) ($_GET['r'] ?? '');
 try {
@@ -195,6 +195,11 @@ function overview(): array
     $sec = snapshot('security')['data'] ?? [];
     if (!empty($sec['reboot_required'])) {
         $add('info', 'Redémarrage requis (nouveau noyau ' . ($sec['kernel_latest'] ?? '?') . ').', 'security');
+    }
+    $panel = snapshot('panel')['data'] ?? [];
+    if (!empty($panel['behind'])) {
+        $n = count($panel['behind']);
+        $add('info', "Mise à jour de Hostkeep disponible ($n nouveauté" . ($n > 1 ? 's' : '') . ').', 'panel');
     }
     $upd = snapshot('updates')['data'] ?? [];
     if (!empty($upd['security_count'])) {

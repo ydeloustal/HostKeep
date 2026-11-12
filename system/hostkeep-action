@@ -15,6 +15,7 @@ JOBS=/var/lib/hostkeep/jobs
 APP=/var/www/hostkeep
 BACKUPS=/var/backups/hostkeep
 SELF=/usr/local/sbin/hostkeep-action
+SOURCE_FILE=/var/lib/hostkeep/source   # path of the git clone used for the install, written by install.sh
 
 # Settings from the install's .env (KEY=value). Read with grep, never sourced: nothing is executed.
 env_get() {
@@ -60,7 +61,7 @@ validate() {
       return 0 ;;
     certbot)
       [[ $# -eq 1 ]] && in_list "$1" dry-run renew || die "action certbot" ;;
-    apt-clean|journal-vacuum|collect-now|backup-now|security-scan|apt-update|apt-upgrade)
+    apt-clean|journal-vacuum|collect-now|backup-now|security-scan|apt-update|apt-upgrade|self-update)
       [[ $# -eq 0 ]] || die "arguments" ;;
     backup-restore)
       [[ $# -eq 2 && $1 =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && $2 =~ ^[A-Za-z0-9_-]{1,64}$ ]] || die "arguments"
@@ -73,6 +74,15 @@ validate() {
       valid_ip "$2" || die "adresse IP invalide" ;;
     *) die "action inconnue" ;;
   esac
+}
+
+# Git clone the panel was installed from: must be a root-owned checkout with install.sh.
+source_dir() {
+  local d
+  d=$(head -n1 "$SOURCE_FILE" 2>/dev/null) || { echo "Pas de dépôt source enregistré : réinstalle depuis un clone git (sudo ./install.sh app)."; return 1; }
+  [[ $d == /* && -d $d/.git && -f $d/install.sh ]] || { echo "Dépôt source introuvable : $d"; return 1; }
+  [[ $(stat -c %u "$d") == 0 && $(stat -c %u "$d/install.sh") == 0 ]] || { echo "Le dépôt $d doit appartenir à root."; return 1; }
+  echo "$d"
 }
 
 configtest() { echo "# apache2ctl configtest"; apache2ctl configtest 2>&1 | grep -v AH00558; return "${PIPESTATUS[0]}"; }
@@ -122,6 +132,23 @@ run() {
       php "$APP/bin/collect.php" scan ;;
     apt-update)
       apt-get update && php "$APP/bin/collect.php" updates && apt list --upgradable 2>/dev/null ;;
+    self-update)
+      local src branch new
+      src=$(source_dir) || { echo "$src"; return 1; }
+      export GIT_TERMINAL_PROMPT=0
+      branch=$(git -C "$src" rev-parse --abbrev-ref HEAD) || return 1
+      git -C "$src" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1 || { echo "La branche $branch ne suit aucune branche distante."; return 1; }
+      [[ -z $(git -C "$src" status --porcelain --untracked-files=no) ]] || { echo "Des fichiers ont été modifiés à la main dans $src : mise à jour annulée."; git -C "$src" status --short; return 1; }
+      echo "# git fetch ($src, branche $branch)"
+      timeout 60 git -C "$src" fetch --prune || return 1
+      new=$(git -C "$src" log --format='%h %s' 'HEAD..@{u}')
+      if [[ -z $new ]]; then echo "Hostkeep est déjà à jour ($(git -C "$src" log -1 --format='%h, %cd' --date=short))."; return 0; fi
+      echo "Nouveautés :"; echo "$new" | sed 's/^/  /'
+      echo "# git merge --ff-only"
+      git -C "$src" merge --ff-only '@{u}' || { echo "Historique divergent : mise à jour annulée, rien n'a été modifié."; return 1; }
+      echo "# ./install.sh app"
+      "$src/install.sh" app || return 1
+      echo "Hostkeep mis à jour : $(git -C "$src" log -1 --format='%h %s'). Recharge la page." ;;
     apt-upgrade)
       export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
       apt-get update || return 1
