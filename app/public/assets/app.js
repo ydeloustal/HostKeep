@@ -42,6 +42,14 @@ const pct = (a, b) => b ? 100 * a / b : 0;
 const level = p => p > 90 ? 'crit' : p > 75 ? 'warn' : '';
 const badge = (text, cls) => el('span', { class: `badge ${cls || ''}` }, text);
 const bar = p => el('div', { class: `bar ${level(p)}` }, el('span', { style: { width: `${Math.min(100, p).toFixed(1)}%` } }));
+/* Bar comparing items between them (not a fill level): neutral colour, never an alert colour. */
+const rbar = p => el('div', { class: 'bar rel' }, el('span', { style: { width: `${Math.min(100, p).toFixed(1)}%` } }));
+/* systemd timestamps ("Tue 2026-11-10 08:12:33 UTC") -> "il y a 2 j", full date kept as tooltip. */
+const since = raw => {
+  const m = /(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}(?::\d{2})?)/.exec(raw || '');
+  const t = m ? Date.parse(`${m[1]}T${m[2]}${/UTC/.test(raw) ? 'Z' : ''}`) : NaN;
+  return isNaN(t) ? el('span', { class: 'small' }, raw || '–') : el('span', { class: 'small', title: raw }, ago(t / 1000));
+};
 
 /* Lucide-style line icons, drawn with DOM calls (CSP-safe). */
 const ICONS = {
@@ -116,7 +124,7 @@ function spark(vals) {
     el('polyline', { points: pts, class: 'spark-line', 'vector-effect': 'non-scaling-stroke' }));
 }
 const stats = (...s) => el('div', { class: 'stats' }, s);
-const stale = upd => el('p', { class: 'muted small' }, `Données collectées ${ago(upd)}.`);
+const stale = upd => el('span', { class: 'stale', title: upd ? fmtDate(upd) : '' }, `relevé ${ago(upd)}`);
 const note = text => el('p', { class: 'muted small' }, text);
 const linkBtn = (label, onclick) => el('button', { class: 'linkish', onclick }, label);
 
@@ -139,10 +147,26 @@ document.getElementById('modal-close').onclick = closeModal;
 modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
 
+/* Confirmation dialog (native <dialog>: focus trapped, Escape cancels). Resolves true / false. */
+function confirmDialog(message, { ok = 'Confirmer', danger = false } = {}) {
+  return new Promise(resolve => {
+    const yes = el('button', { class: `btn ${danger ? 'danger solid' : 'primary'}`, value: 'ok' }, ok);
+    const dlg = el('dialog', { class: 'confirm', 'aria-labelledby': 'confirm-msg' },
+      el('form', { method: 'dialog' },
+        el('p', { id: 'confirm-msg' }, message),
+        el('div', { class: 'actions' }, el('button', { class: 'btn', value: 'cancel' }, 'Annuler'), yes)));
+    dlg.addEventListener('close', () => { resolve(dlg.returnValue === 'ok'); dlg.remove(); });
+    dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close('cancel'); });   // click on the backdrop
+    document.body.append(dlg);
+    dlg.showModal();
+    yes.focus();
+  });
+}
+
 function actionBtn(label, verb, args, { confirm: msg, cls = '' } = {}) {
   return el('button', {
-    class: `btn small ${cls}`, onclick: () => {
-      if (msg && !window.confirm(msg)) return;
+    class: `btn small ${cls}`, onclick: async () => {
+      if (msg && !await confirmDialog(msg, { ok: label.replace(/ \(\d+\)$/, ''), danger: cls.includes('danger') })) return;
       runAction(label, verb, args);
     }
   }, label);
@@ -377,11 +401,12 @@ B.traffic = async () => {
   return { actions: [sel, seg], body };
 };
 
+const PM2_STATUS = { online: 'en ligne', stopped: 'arrêtée', stopping: 'arrêt…', launching: 'démarrage…', errored: 'en erreur', 'one-launch-status': 'lancée une fois' };
 function pm2Table(pm2) {
   const apps = pm2.data?.apps || [];
   return table(['Nom', 'État', { label: 'CPU', num: true }, { label: 'Mémoire', num: true }, { label: 'Redém.', num: true }, 'En ligne depuis', ''],
-    apps.map(a => [el('strong', {}, a.name), badge(a.status, a.status === 'online' ? 'ok' : 'crit'), `${a.cpu} %`, fmtBytes(a.memory), a.restarts,
-      a.uptime ? fmtDur(Date.now() / 1000 - a.uptime / 1000) : '–', actionBtn('Restart', 'pm2-restart', [a.name], { confirm: `Redémarrer l'appli PM2 ${a.name} ?` })]),
+    apps.map(a => [el('strong', {}, a.name), badge(PM2_STATUS[a.status] || a.status, a.status === 'online' ? 'ok' : 'crit'), `${a.cpu} %`, fmtBytes(a.memory), a.restarts,
+      a.uptime ? fmtDur(Date.now() / 1000 - a.uptime / 1000) : '–', actionBtn('Redémarrer', 'pm2-restart', [a.name], { confirm: `Redémarrer l'appli PM2 ${a.name} ?` })]),
     'Aucune appli PM2.');
 }
 
@@ -391,15 +416,15 @@ B.services = async () => {
   const rows = (s.data?.units || []).map(u => {
     const ok = u.ActiveState === 'active';
     const acts = u.action ? [
-      actionBtn('Restart', 'service', ['restart', u.action], { confirm: `Redémarrer ${u.action} ?` }),
-      u.reload ? actionBtn('Reload', 'service', ['reload', u.action]) : null,
+      actionBtn('Redémarrer', 'service', ['restart', u.action], { confirm: `Redémarrer ${u.action} ? Le service sera coupé quelques secondes.` }),
+      u.reload ? actionBtn('Recharger', 'service', ['reload', u.action]) : null,
     ] : el('span', { class: 'muted small' }, 'lecture seule');
     return [el('div', {}, el('strong', {}, u.Id.replace('.service', '')), el('div', { class: 'muted small' }, u.Description)), badge(ok ? 'actif' : `${u.ActiveState} (${u.SubState})`, ok ? 'ok' : 'crit'),
-      u.MemoryCurrent && u.MemoryCurrent !== '[not set]' ? fmtBytes(Number(u.MemoryCurrent)) : '–', el('span', { class: 'small' }, u.ActiveEnterTimestamp || '–'), acts];
+      u.MemoryCurrent && u.MemoryCurrent !== '[not set]' ? fmtBytes(Number(u.MemoryCurrent)) : '–', since(u.ActiveEnterTimestamp), acts];
   });
   return [
     failed.length ? el('div', { class: 'alert crit' }, badge('échec', 'crit'), `Unités en échec : ${failed.join(', ')}`) : null,
-    card(null, table(['Service', 'État', { label: 'Mémoire', num: true }, 'Démarré le', ''], rows)),
+    card(null, table(['Service', 'État', { label: 'Mémoire', num: true }, 'Démarré', ''], rows)),
     stale(s.updated),
   ];
 };
@@ -422,7 +447,7 @@ B.perf = async () => {
   const memMax = Math.max(1, ...(d.memory || []).map(x => x.rss));
   return [
     el('div', { class: 'grid2' },
-      card('Mémoire par composant', table(['Composant', { label: 'RAM', num: true }, ''], (d.memory || []).map(x => [el('strong', {}, x.name), fmtBytes(x.rss), bar(pct(x.rss, memMax))]))),
+      card('Mémoire par composant', table(['Composant', { label: 'RAM', num: true }, ''], (d.memory || []).map(x => [el('strong', {}, x.name), fmtBytes(x.rss), rbar(pct(x.rss, memMax))]))),
       card('MariaDB', stats(
         stat('Requêtes lentes', num(m.Slow_queries), `seuil ${Number(m.long_query_time ?? 0)} s · log ${m.slow_query_log === 'ON' ? 'actif' : 'inactif'}`),
         stat('Connexions max', m.max_connections ?? '–'),
@@ -447,7 +472,7 @@ B.storage = async () => {
       card(null, table(['Montage', 'Type', { label: 'Taille', num: true }, { label: 'Libre', num: true }, 'Remplissage'],
         (d.df || []).map(p => [el('div', {}, el('strong', {}, p.target), el('div', { class: 'mono small muted' }, p.source)), p.fstype, fmtBytes(p.size), fmtBytes(p.avail), el('div', { class: 'fill' }, `${p.pct} %`, bar(p.pct))]))),
       el('div', { class: 'grid2' },
-        card('Plus gros dossiers', table(['Dossier', { label: 'Taille', num: true }, ''], (d.dirs || []).map(x => [el('span', { class: 'mono small' }, x.path), fmtBytes(x.size), bar(pct(x.size, maxDir))]))),
+        card('Plus gros dossiers', table(['Dossier', { label: 'Taille', num: true }, ''], (d.dirs || []).map(x => [el('span', { class: 'mono small' }, x.path), fmtBytes(x.size), rbar(pct(x.size, maxDir))]))),
         card('Nettoyable', stats(stat('Journal systemd', fmtBytes(d.journal), 'plafonné à 100 Mo'), stat('Cache apt', fmtBytes(d.apt_cache), 'paquets téléchargés')))),
       stale(s.updated),
     ],
@@ -695,6 +720,8 @@ async function renderPage(page) {
         const { body: nodes, actions } = out && out.body !== undefined ? out : { body: out };
         if (actions) head.append(el('div', { class: 'actions' }, actions));
         render(body, nodes);
+        const st = body.querySelector(':scope > .stale, :scope > * > .stale');
+        if (st) head.firstChild.after(st);
       } catch (e) {
         if (myId === renderId) render(body, el('div', { class: 'error-box' }, `Erreur : ${e.message}`));
       }
