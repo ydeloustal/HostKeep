@@ -16,6 +16,7 @@ APP=/var/www/hostkeep
 BACKUPS=/var/backups/hostkeep
 SELF=/usr/local/sbin/hostkeep-action
 SOURCE_FILE=/var/lib/hostkeep/source   # path of the git clone used for the install, written by install.sh
+PREVIOUS_FILE=/var/lib/hostkeep/previous   # commit installed before the last self-update (for self-rollback)
 
 # Settings from the install's .env (KEY=value). Read with grep, never sourced: nothing is executed.
 env_get() {
@@ -63,7 +64,7 @@ validate() {
       return 0 ;;
     certbot)
       [[ $# -eq 1 ]] && in_list "$1" dry-run renew || die "action certbot" ;;
-    apt-clean|journal-vacuum|collect-now|backup-now|security-scan|apt-update|apt-upgrade|self-update)
+    apt-clean|journal-vacuum|collect-now|backup-now|security-scan|apt-update|apt-upgrade|self-update|self-rollback)
       [[ $# -eq 0 ]] || die "arguments" ;;
     backup-restore)
       [[ $# -eq 2 && $1 =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && $2 =~ ^[A-Za-z0-9_-]{1,64}$ ]] || die "arguments"
@@ -146,11 +147,27 @@ run() {
       new=$(git -C "$src" log --format='%h %s' 'HEAD..@{u}')
       if [[ -z $new ]]; then echo "Hostkeep est déjà à jour ($(git -C "$src" log -1 --format='%h, %cd' --date=short))."; return 0; fi
       echo "Nouveautés :"; echo "$new" | sed 's/^/  /'
+      git -C "$src" rev-parse HEAD > "$PREVIOUS_FILE.tmp" && mv "$PREVIOUS_FILE.tmp" "$PREVIOUS_FILE"
       echo "# git merge --ff-only"
-      git -C "$src" merge --ff-only '@{u}' || { echo "Historique divergent : mise à jour annulée, rien n'a été modifié."; return 1; }
+      git -C "$src" merge --ff-only '@{u}' || { echo "Historique divergent : mise à jour annulée, rien n'a été modifié."; rm -f "$PREVIOUS_FILE"; return 1; }
       echo "# ./install.sh app"
       "$src/install.sh" app || return 1
       echo "Hostkeep mis à jour : $(git -C "$src" log -1 --format='%h %s'). Recharge la page." ;;
+    self-rollback)
+      local src prev
+      src=$(source_dir) || { echo "$src"; return 1; }
+      prev=$(head -n1 "$PREVIOUS_FILE" 2>/dev/null)
+      [[ $prev =~ ^[0-9a-f]{40}$ ]] || { echo "Aucune version précédente enregistrée (elle l'est à chaque mise à jour depuis le panel)."; return 1; }
+      git -C "$src" merge-base --is-ancestor "$prev" HEAD || { echo "La version $prev n'est pas un ancêtre de la version installée : retour arrière refusé."; return 1; }
+      [[ -z $(git -C "$src" status --porcelain --untracked-files=no) ]] || { echo "Des fichiers ont été modifiés à la main dans $src : retour arrière annulé."; return 1; }
+      echo "Version installée : $(git -C "$src" log -1 --format='%h %s')"
+      echo "Retour à :          $(git -C "$src" log -1 --format='%h %s' "$prev")"
+      echo "# git reset --hard ${prev:0:7}"
+      git -C "$src" reset --hard "$prev" || return 1
+      rm -f "$PREVIOUS_FILE"
+      echo "# ./install.sh app"
+      "$src/install.sh" app || return 1
+      echo "Retour arrière terminé. Les nouveautés réapparaissent comme mises à jour disponibles. Recharge la page." ;;
     apt-upgrade)
       export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
       apt-get update || return 1
