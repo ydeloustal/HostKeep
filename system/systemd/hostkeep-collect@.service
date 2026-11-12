@@ -1,0 +1,12 @@
+# Hostkeep collector, one run of a mode (%i = minute, 5min, hourly, purge, backup, scan).
+# Started by the hostkeep-*.timer units. Logs: journalctl -u 'hostkeep-collect@*'
+[Unit]
+Description=Hostkeep : collecte (%i)
+After=mariadb.service mysql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/php /var/www/hostkeep/bin/collect.php %i
+Nice=10
+StandardOutput=null
+StandardError=journal
