@@ -56,6 +56,7 @@ button { font-family: inherit; }
 .brand small { display: none; color: var(--muted); font-size: 12px; }
 .server { display: none; }
 .icon-btn .lbl { display: none; }
+.icon-btn[hidden] { display: none; }
 .topbar-right { display: flex; align-items: center; gap: 0; }
 .topbar-right form { margin: 0; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--tap); height: var(--tap); border: 0; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; transition: background .15s, color .15s; }

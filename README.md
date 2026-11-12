@@ -35,7 +35,7 @@ Les maquettes de la version mobile sont dans [`docs/mockups/`](docs/mockups/inde
 | **Sécurité** | Audit des sites (fichiers `.env`/`.git`/dumps exposés, dossiers listables, en-têtes, ports, SSH), mises à jour apt, fail2ban, ports en écoute, connexions SSH, journal des actions | Lancer l'audit, installer les mises à jour, débannir une IP |
 | **Données** | Bases MariaDB, sauvegardes quotidiennes, journaux filtrables, explorateur de fichiers en lecture seule | Sauvegarder, télécharger, restaurer une base (avec copie de sécurité automatique) |
 
-Et aussi : thème clair/sombre, interface mobile-first (barre d'onglets, zones tactiles de 44 px), rafraîchissement en direct, liens profonds (`#system/storage`), accessibilité clavier.
+Et aussi : application installable sur téléphone et ordinateur (PWA, page hors ligne), thème clair/sombre, interface mobile-first (barre d'onglets, zones tactiles de 44 px), rafraîchissement en direct, liens profonds (`#system/storage`), accessibilité clavier.
 
 ## Stack technique
 

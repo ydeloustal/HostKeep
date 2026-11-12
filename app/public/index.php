@@ -16,11 +16,17 @@ $nav = ['home' => 'Accueil', 'sites' => 'Sites', 'system' => 'Système', 'securi
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="csrf" content="<?= h($token) ?>">
 <title>Hostkeep</title>
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/assets/manifest.json">
+<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131720" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-title" content="Hostkeep">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
@@ -37,6 +43,7 @@ $nav = ['home' => 'Accueil', 'sites' => 'Sites', 'system' => 'Système', 'securi
   </nav>
   <div class="topbar-right">
     <a class="health" id="health" href="#home" hidden></a>
+    <button class="icon-btn" id="install-btn" title="Installer l'application" aria-label="Installer l'application" hidden><span class="ico" data-icon="install"></span><span class="lbl">Installer l'appli</span></button>
     <button class="icon-btn" id="refresh-btn" title="Rafraîchir" aria-label="Rafraîchir"><span class="ico" data-icon="refresh"></span><span class="lbl">Rafraîchir</span></button>
     <button class="icon-btn" id="theme-btn" title="Thème clair / sombre" aria-label="Changer de thème"><span class="ico" data-icon="theme"></span><span class="lbl" id="theme-lbl">Thème sombre</span></button>
     <form method="post" action="/logout.php">

@@ -55,6 +55,7 @@ const ICONS = {
   sun: [['circle', { cx: 12, cy: 12, r: 4 }], ['path', { d: 'M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4' }]],
   alert: [['path', { d: 'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z' }], ['path', { d: 'M12 9v4M12 17h.01' }]],
   chevron: [['path', { d: 'm9 6 6 6-6 6' }]],
+  install: [['path', { d: 'M12 3v12M7 10l5 5 5-5' }], ['path', { d: 'M5 21h14' }]],
   logout: [['path', { d: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9' }]],
   x: [['path', { d: 'M18 6 6 18M6 6l12 12' }]],
   folder: [['path', { d: 'M3 6a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z' }]],
@@ -741,6 +742,14 @@ document.getElementById('theme-btn').onclick = () => {
 };
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncThemeBtn);
 syncThemeBtn();
+
+/* Installable app (PWA): service worker + "Installer l'appli" button when the browser offers it. */
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => { /* not fatal */ });
+let installEvt = null;
+const installBtn = document.getElementById('install-btn');
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; installBtn.hidden = false; });
+window.addEventListener('appinstalled', () => { installEvt = null; installBtn.hidden = true; });
+installBtn.onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; installBtn.hidden = true; };
 
 route();
 refreshHealth();
