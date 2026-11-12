@@ -1,0 +1,11 @@
+# Hostkeep: métriques, services, processus (chaque minute)
+[Unit]
+Description=Hostkeep : métriques, services, processus (chaque minute)
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Unit=hostkeep-collect@minute.service
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

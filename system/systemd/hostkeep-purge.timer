@@ -1,0 +1,12 @@
+# Hostkeep: purge des vieilles données (chaque nuit)
+[Unit]
+Description=Hostkeep : purge des vieilles données (chaque nuit)
+
+[Timer]
+OnCalendar=*-*-* 03:42:00
+Unit=hostkeep-collect@purge.service
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

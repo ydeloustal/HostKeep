@@ -6,7 +6,7 @@ declare(strict_types=1);
  * everything itself; this list only rejects bad input early with a clear message.
  */
 const ACTIONS = [
-    'service'        => ['restart|reload', 'apache2|php8\.4-fpm|mariadb|fail2ban|cron|postfix'],
+    'service'        => ['restart|reload', '[a-z0-9@._-]{1,64}'],   // allowed list: HOSTKEEP_SERVICES, checked by the helper
     'pm2-restart'    => ['[A-Za-z0-9._-]{1,64}'],
     'site'           => ['enable|disable', '[A-Za-z0-9._-]{1,100}'],
     'certbot'        => ['dry-run|renew'],
@@ -21,7 +21,7 @@ const ACTIONS = [
     'apt-upgrade'    => [],
 ];
 
-const BACKUP_DIR = '/var/backups/dashboard-db';
+const BACKUP_DIR = '/var/backups/hostkeep';
 
 function valid_fs_path(mixed $p): bool
 {
@@ -38,6 +38,13 @@ function fs_list(string $path): array
         return ['error' => trim($r['err']) ?: 'lecture impossible'];
     }
     return json_decode($r['out'], true) ?: ['error' => 'réponse illisible'];
+}
+
+/** Folders the file browser may open (HOSTKEEP_FILE_ROOTS, resolved by the root helper). */
+function fs_roots(): array
+{
+    $r = run_helper(['fs-roots']);
+    return $r['rc'] === 0 ? array_values(array_filter(explode("\n", trim($r['out'])), 'strlen')) : [];
 }
 
 function fs_read(string $path): array
@@ -167,7 +174,7 @@ function job_status(string $id): array
 
 function read_log(string $key, int $lines): array
 {
-    if (!preg_match('/^(journal-errors|fail2ban|dashboard-auth|apache:[A-Za-z0-9._-]+|pm2:[A-Za-z0-9._-]+)$/D', $key)) {
+    if (!preg_match('/^(journal-errors|fail2ban|hostkeep-auth|apache:[A-Za-z0-9._-]+|pm2:[A-Za-z0-9._-]+)$/D', $key)) {
         return ['error' => 'journal inconnu'];
     }
     $r = run_helper(['log', $key, (string) max(10, min(2000, $lines))]);

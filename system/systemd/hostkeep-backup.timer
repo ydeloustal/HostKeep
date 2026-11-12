@@ -1,0 +1,12 @@
+# Hostkeep: sauvegarde des bases (chaque nuit)
+[Unit]
+Description=Hostkeep : sauvegarde des bases (chaque nuit)
+
+[Timer]
+OnCalendar=*-*-* 03:10:00
+Unit=hostkeep-collect@backup.service
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

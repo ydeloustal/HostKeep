@@ -1,0 +1,12 @@
+# Hostkeep: audit de sécurité des sites (chaque nuit)
+[Unit]
+Description=Hostkeep : audit de sécurité des sites (chaque nuit)
+
+[Timer]
+OnCalendar=*-*-* 04:20:00
+Unit=hostkeep-collect@scan.service
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

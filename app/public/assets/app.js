@@ -1,5 +1,5 @@
 'use strict';
-/* Admin VPS — vanilla JS front-end. All dynamic text goes through textContent (no innerHTML with data). */
+/* Hostkeep — vanilla JS front-end. All dynamic text goes through textContent (no innerHTML with data). */
 
 const CSRF = document.querySelector('meta[name="csrf"]').content;
 const content = document.getElementById('content');
@@ -91,7 +91,13 @@ function table(headers, rows, empty = 'Rien à afficher.') {
   if (!rows.length) return el('p', { class: 'empty' }, empty);
   return el('div', { class: 'table-wrap' }, el('table', {},
     el('thead', {}, el('tr', {}, headers.map(h => el('th', { class: h.num ? 'num' : null }, h.label ?? h)))),
-    el('tbody', {}, rows.map(r => el('tr', {}, r.map((c, i) => el('td', { class: headers[i]?.num ? 'num' : null }, c)))))));
+    el('tbody', {}, rows.map(r => el('tr', {}, r.map((c, i) => cell(headers[i], c)))))));
+}
+/* data-label: column name shown in front of the value when rows are displayed as cards (phones). */
+function cell(h, content) {
+  const td = el('td', { class: h?.num ? 'num' : null, 'data-label': typeof h === 'string' ? h : (h?.label ?? '') }, content);
+  if (td.children.length && [...td.children].every(k => k.matches('.btn'))) td.classList.add('actions-cell');
+  return td;
 }
 function stat(label, value, sub, p, cls) {
   return el('div', { class: `stat ${cls || ''}` }, el('div', { class: 'label' }, label), el('div', { class: 'value' }, value), sub ? el('div', { class: 'sub' }, sub) : null, p !== undefined ? bar(p) : null);
@@ -219,7 +225,7 @@ B.summary = async () => {
   draw(live);
   liveTimer = setInterval(async () => { try { draw(await api({ r: 'live' }, { poll: true })); } catch (e) { /* ignore */ } }, 5000);
   const alerts = ov.alerts.length
-    ? ov.alerts.map(a => el('a', { class: `alert ${a.level}`, href: `#${LEGACY[a.section] || 'home'}` }, badge({ crit: 'critique', warn: 'attention', info: 'info' }[a.level], a.level), el('span', {}, a.text), el('span', { class: 'go' }, 'Voir →')))
+    ? ov.alerts.map(a => el('a', { class: `alert ${a.level}`, href: `#${LEGACY[a.section] || 'home'}` }, badge({ crit: 'critique', warn: 'attention', info: 'info' }[a.level], a.level), el('span', {}, a.text), el('span', { class: 'go' }, el('span', { class: 'long' }, 'Voir '), '→')))
     : [el('div', { class: 'alert ok' }, badge('OK', 'ok'), el('span', {}, 'Aucune alerte : tout fonctionne.'))];
   return [box, el('div', { class: 'alerts' }, alerts), note(`${ov.host} · ${ov.os} · noyau ${ov.kernel}`)];
 };
@@ -479,7 +485,7 @@ B.backups = async () => {
       stats(
         stat('Dernière', last ? new Date(`${last}T12:00:00`).toLocaleDateString('fr-FR') : 'aucune', 'chaque nuit à 3 h 10', undefined, !last ? 'bad' : ''),
         stat('Espace', fmtBytes(d.total), `${d.days?.length ?? 0} jour(s) / ${d.keep ?? 7} max`),
-        stat('Emplacement', 'Ce serveur', d.dir || '/var/backups/dashboard-db')),
+        stat('Emplacement', 'Ce serveur', d.dir || '/var/backups/hostkeep')),
       card(null, (d.days || []).length ? d.days.map(day => el('details', { open: day === d.days[0] ? true : null },
         el('summary', {}, el('strong', {}, new Date(`${day.day}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })), el('span', { class: 'muted small' }, ` — ${day.files.length} base(s), ${fmtBytes(day.size)}`)),
         table(['Base', { label: 'Taille', num: true }, 'Faite à', ''], day.files.map(f => [el('strong', {}, f.db), fmtBytes(f.size), fmtDate(f.mtime),
@@ -519,9 +525,11 @@ B.logs = async () => {
 };
 
 B.files = async () => {
-  let path = sessionStorage.getItem('fspath') || '/var/www';
+  let path = sessionStorage.getItem('fspath') || '';
   const crumbs = el('div', { class: 'toolbar crumbs' }), list = el('div', {});
-  const roots = ['/var/www', '/home/mmi24c04/public_html', '/etc/apache2', '/etc/php/8.4', '/etc/mysql', '/etc/cron.d', '/etc/fail2ban', '/etc/letsencrypt/renewal', '/etc/logrotate.d', '/var/log'];
+  const roots = (await api({ r: 'fsroots' })).roots;   // HOSTKEEP_FILE_ROOTS, filtered by the root helper
+  if (!roots.length) return card(null, el('p', { class: 'empty' }, 'Aucun dossier autorisé (HOSTKEEP_FILE_ROOTS).'));
+  if (!roots.some(r => path === r || path.startsWith(`${r}/`))) path = roots[0];
   const rootSel = el('select', { 'aria-label': 'Racine', onchange: () => go(rootSel.value) }, roots.map(r => el('option', { value: r }, r)));
   const dlUrl = p => `/api.php?${new URLSearchParams({ r: 'fsdl', path: p })}`;
   const view = async p => {
@@ -550,7 +558,7 @@ B.files = async () => {
             : entry('file', e.name, () => view(full));
         return [nameCell, e.type === 'file' ? fmtBytes(e.size) : '', el('span', { class: 'small' }, fmtDate(e.mtime)), el('span', { class: 'mono small', title: `${e.owner}:${e.group}` }, `${e.mode} ${e.owner}`)];
       })], 'Dossier vide.'), r.total > r.entries.length ? note(`${r.entries.length} premiers éléments sur ${r.total}.`) : null);
-    } catch (e) { render(list, el('div', { class: 'error-box' }, `Erreur : ${e.message}`)); if (p !== '/var/www') sessionStorage.removeItem('fspath'); }
+    } catch (e) { render(list, el('div', { class: 'error-box' }, `Erreur : ${e.message}`)); if (p !== roots[0]) sessionStorage.removeItem('fspath'); }
   };
   go(path);
   return card(null, [crumbs, list, note('Lecture seule. Les clés privées ne sont jamais lisibles.')]);
@@ -586,7 +594,7 @@ async function renderPage(page) {
   document.querySelectorAll('[data-nav]').forEach(a => a.toggleAttribute('aria-current', a.dataset.nav === page));
   document.getElementById('page-title').textContent = P.title;
   document.getElementById('page-desc').textContent = P.desc;
-  document.title = `${P.title} · Admin VPS`;
+  document.title = `${P.title} · Hostkeep`;
   chips.replaceChildren(...P.blocks.map(([id, label]) => el('a', { href: `#${page}/${id}`, 'data-chip': id }, label)));
 
   observer = new IntersectionObserver(entries => {
@@ -637,7 +645,9 @@ async function refreshHealth() {
     const ov = await api({ r: 'overview' }, { poll: true });
     const crit = ov.alerts.filter(a => a.level === 'crit').length, warn = ov.alerts.filter(a => a.level === 'warn').length;
     pill.className = `health ${crit ? 'crit' : warn ? 'warn' : 'ok'}`;
-    pill.textContent = crit ? `${crit} critique${crit > 1 ? 's' : ''}` : warn ? `${warn} alerte${warn > 1 ? 's' : ''}` : 'Tout va bien';
+    const long = crit ? `${crit} critique${crit > 1 ? 's' : ''}` : warn ? `${warn} alerte${warn > 1 ? 's' : ''}` : 'Tout va bien';
+    pill.replaceChildren(el('span', { class: 'short' }, crit || warn || 'OK'), el('span', { class: 'long' }, long));
+    pill.setAttribute('aria-label', long);
     pill.hidden = false;
   } catch (e) { /* ignore */ }
 }
