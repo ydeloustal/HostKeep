@@ -36,6 +36,8 @@ detect_services() {
 
 die() { echo "Refusé : $*" >&2; exit 2; }
 in_list() { local x=$1; shift; local i; for i in "$@"; do [[ $i == "$x" ]] && return 0; done; return 1; }
+# Same, with the allowed values given as one space/newline separated string (service, PM2 and jail names).
+in_words() { local -a w; read -r -d '' -a w <<< "$2" || true; in_list "$1" "${w[@]}"; }
 pm2_names() { pm2 jlist 2>/dev/null | python3 -c 'import json,sys; [print(p["name"]) for p in json.load(sys.stdin)]' 2>/dev/null; }
 jails() { fail2ban-client status 2>/dev/null | sed -n 's/.*Jail list:[[:space:]]*//p' | tr ',' '\n' | tr -d ' \t'; }
 valid_ip() { python3 -I -c 'import ipaddress,sys; ipaddress.ip_address(sys.argv[1])' "$1" 2>/dev/null; }
@@ -47,11 +49,11 @@ validate() {
     service)
       [[ $# -eq 2 ]] || die "arguments"
       in_list "$1" restart reload || die "action de service inconnue"
-      in_list "$2" $(services) || die "service non autorisé"
+      in_words "$2" "$(services)" || die "service non autorisé"
       if [[ $1 == reload && $2 == cron ]]; then die "reload non supporté pour cron"; fi ;;
     pm2-restart)
       [[ $# -eq 1 && $1 =~ ^[A-Za-z0-9._-]{1,64}$ ]] || die "nom d'appli"
-      in_list "$1" $(pm2_names) || die "appli PM2 inconnue" ;;
+      in_words "$1" "$(pm2_names)" || die "appli PM2 inconnue" ;;
     site)
       [[ $# -eq 2 ]] || die "arguments"
       in_list "$1" enable disable || die "action de site inconnue"
@@ -70,7 +72,7 @@ validate() {
       mysql -N -e "SHOW DATABASES" | grep -qx -- "$2" || die "base inconnue" ;;
     f2b-unban)
       [[ $# -eq 2 && $1 =~ ^[a-z0-9_-]{1,40}$ ]] || die "arguments"
-      in_list "$1" $(jails) || die "jail inconnue"
+      in_words "$1" "$(jails)" || die "jail inconnue"
       valid_ip "$2" || die "adresse IP invalide" ;;
     *) die "action inconnue" ;;
   esac
@@ -207,7 +209,7 @@ case $cmd in
         tail -n "$n" -- "/var/log/apache2/$f" ;;
       pm2:*)
         a=${key#pm2:}
-        [[ $a =~ ^[A-Za-z0-9._-]{1,64}$ ]] && in_list "$a" $(pm2_names) || die "appli PM2 inconnue"
+        [[ $a =~ ^[A-Za-z0-9._-]{1,64}$ ]] && in_words "$a" "$(pm2_names)" || die "appli PM2 inconnue"
         pm2 logs "$a" --lines "$n" --nostream --raw 2>&1 ;;
       *) die "journal inconnu" ;;
     esac ;;
