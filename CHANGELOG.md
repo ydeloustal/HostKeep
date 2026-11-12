@@ -24,6 +24,7 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 ### Corrigé
 - La pastille de section active restait parfois sur la mauvaise section pendant le chargement.
 - Le focus clavier pouvait sortir de la fenêtre d'action.
+- Sur grand écran, la croix de fermeture des fenêtres s'étirait sur toute la largeur au lieu de rester à droite.
 
 ## [1.0.0] — 2026-11-12
 
