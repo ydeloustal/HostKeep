@@ -73,8 +73,8 @@ Toutes les commandes se tapent **sur le VPS**, connecté en SSH (`ssh moncompte@
 
 ```bash
 sudo apt-get update && sudo apt-get install -y git
-git clone https://github.com/ydeloustal/hostkeep.git
-cd hostkeep
+sudo git clone https://github.com/ydeloustal/HostKeep.git /opt/hostkeep
+cd /opt/hostkeep
 ```
 
 ### 2. Installer les dépendances
@@ -88,8 +88,8 @@ Installe PHP-FPM, MariaDB, fail2ban, certbot et les outils nécessaires, puis d�
 ### 3. Configurer les variables d'environnement
 
 ```bash
-cp .env.example .env
-nano .env
+sudo cp .env.example .env
+sudo nano .env
 ```
 
 Renseigne au minimum `HOSTKEEP_DOMAIN` (ton sous-domaine) et, de préférence, `HOSTKEEP_LETSENCRYPT_EMAIL`.
@@ -181,9 +181,16 @@ Le panel a des pouvoirs d'administration : protège-le comme un accès SSH.
 
 ## Mise à jour
 
+**Depuis le panel :** page *Sécurité › Version du panel*, bouton **Mettre à jour**. Le helper root fait un `git pull`
+(avance rapide uniquement) dans le clone qui a servi à l'installation, puis relance `./install.sh app`. Le panel vérifie
+chaque heure s'il y a des nouveautés sur GitHub et l'affiche dans les alertes. Le bouton refuse de travailler si le clone
+n'appartient pas à root ou si des fichiers y ont été modifiés à la main.
+
+**En SSH :**
+
 ```bash
-cd ~/hostkeep
-git pull
+cd /opt/hostkeep
+sudo git pull
 sudo ./install.sh app
 ```
 
@@ -193,7 +200,7 @@ Si une nouvelle version modifie les modèles de serveur web, relance aussi `sudo
 ## Désinstallation
 
 ```bash
-cd ~/hostkeep
+cd /opt/hostkeep
 sudo ./install.sh uninstall           # retire le panel, garde la base, les sauvegardes et /var/www/hostkeep
 sudo ./install.sh uninstall --purge   # supprime aussi la base, les sauvegardes, les logs et l'utilisateur
 ```

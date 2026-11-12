@@ -217,7 +217,7 @@ const LEGACY = {
   overview: 'home', resources: 'home/history', processes: 'home/processes', services: 'system/services', pm2: 'system/pm2',
   sites: 'sites/sites', traffic: 'sites/traffic', certs: 'sites/certs', databases: 'data/databases', backups: 'data/backups',
   perf: 'system/perf', storage: 'system/storage', files: 'data/files', logs: 'data/logs', security: 'security/audit',
-  updates: 'security/updates', cron: 'system/pm2', audit: 'security/journal',
+  updates: 'security/updates', cron: 'system/pm2', audit: 'security/journal', panel: 'security/panel',
 };
 
 const liveHist = [];   // last live samples, kept across page changes for the trend lines
@@ -464,6 +464,31 @@ B.updates = async () => {
   };
 };
 
+B.panel = async () => {
+  const s = await section('panel');
+  const d = s.data || {};
+  if (!d.git) return [card(null, el('p', { class: 'empty' }, 'Le panel n\'a pas été installé depuis un clone git : la mise à jour depuis cette page est indisponible.')), stale(s.updated)];
+  const n = (d.behind || []).length;
+  const btn = actionBtn(n ? `Mettre à jour (${n})` : 'Vérifier et mettre à jour', 'self-update', [], {
+    cls: n ? 'primary' : '',
+    confirm: 'Récupérer la dernière version depuis GitHub (git pull) et réinstaller le panel ? La page sera indisponible quelques secondes.',
+  });
+  return {
+    actions: btn,
+    body: [
+      stats(
+        stat('Version installée', d.hash || '–', d.ts ? `${fmtDate(d.ts)} · ${d.subject}` : ''),
+        stat('Branche suivie', d.remote || d.branch || '–', d.source),
+        stat('Nouveautés', n ? String(n) : 'aucune', n ? 'en attente sur GitHub' : 'le panel est à jour', undefined, n ? 'warn-stat' : ''),
+      ),
+      d.dirty ? el('div', { class: 'alert warn' }, badge('attention', 'warn'), el('span', {}, `Des fichiers ont été modifiés à la main dans ${d.source} : la mise à jour sera refusée.`)) : null,
+      n ? card('À installer', table(['Commit', 'Date', 'Description'], d.behind.map(c => [el('span', { class: 'mono' }, c.hash), fmtDate(c.ts), c.subject]))) : null,
+      note('git pull (avance rapide uniquement) dans le dépôt source, puis ./install.sh app : la configuration (.env) et le mot de passe sont conservés.'),
+      stale(s.updated),
+    ],
+  };
+};
+
 B.access = async () => {
   const s = await section('security');
   const d = s.data || {};
@@ -594,7 +619,7 @@ const PAGES = {
   home: { title: 'Accueil', desc: 'L\'état du serveur en un coup d\'œil.', blocks: [['summary', 'En direct'], ['history', 'Historique'], ['processes', 'Processus']] },
   sites: { title: 'Sites', desc: 'Disponibilité, certificats HTTPS et fréquentation.', blocks: [['sites', 'Sites'], ['certs', 'Certificats'], ['traffic', 'Trafic']] },
   system: { title: 'Système', desc: 'Services, applis, performances et disque.', blocks: [['services', 'Services'], ['pm2', 'PM2 & tâches'], ['perf', 'Performances'], ['storage', 'Stockage']] },
-  security: { title: 'Sécurité', desc: 'Audit, mises à jour, accès et historique des actions.', blocks: [['audit', 'Audit'], ['updates', 'Mises à jour'], ['access', 'Accès'], ['journal', 'Journal d\'actions']] },
+  security: { title: 'Sécurité', desc: 'Audit, mises à jour, accès et historique des actions.', blocks: [['audit', 'Audit'], ['updates', 'Mises à jour'], ['panel', 'Version du panel'], ['access', 'Accès'], ['journal', 'Journal d\'actions']] },
   data: { title: 'Données', desc: 'Bases, sauvegardes, journaux et fichiers.', blocks: [['databases', 'Bases'], ['backups', 'Sauvegardes'], ['logs', 'Journaux'], ['files', 'Fichiers']] },
 };
 
