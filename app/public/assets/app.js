@@ -282,9 +282,32 @@ B.processes = async () => {
   return [el('div', { class: 'grid2' }, card('Par RAM', t(s.data?.by_mem)), card('Par CPU', t(s.data?.by_cpu))), stale(s.updated)];
 };
 
+/* Response time of one site over 7 or 30 days, in the modal. */
+async function siteHistory(host) {
+  let days = '7';
+  const seg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Période' }), box = el('div', { class: 'stack' }, el('div', { class: 'skeleton' }));
+  const draw = async () => {
+    seg.replaceChildren(...[['7', '7 j'], ['30', '30 j']].map(([v, l]) => el('button', { class: v === days ? 'on' : '', 'aria-pressed': String(v === days), onclick: () => { days = v; draw(); } }, l)));
+    try {
+      const h = await api({ r: 'sitehistory', host, days });
+      const pts = h.points.map(p => ({ ...p, ms: p.ms === null ? null : Number(p.ms), max_ms: p.max_ms === null ? null : Number(p.max_ms) }));
+      render(box,
+        stats(
+          stat('Temps moyen', h.avg !== null ? `${h.avg} ms` : '–', `sur ${h.days} jours`),
+          stat('Pire mesure', h.max ? `${h.max} ms` : '–', 'moyenne la plus haute d\'un créneau'),
+          stat('Contrôles en échec', `${num(h.errors)} / ${num(h.checks)}`, h.checks ? `${(100 * (h.checks - h.errors) / h.checks).toFixed(2)} % de réussite` : 'aucun contrôle', undefined, h.errors ? 'warn-stat' : ''),
+        ),
+        card(null, lineChart(pts, [{ name: 'Moyenne', color: '--c1', get: p => p.ms }, { name: 'Pire', color: '--c2', get: p => p.max_ms }], { yFmt: v => `${v.toFixed(0)} ms` })),
+        note('Un contrôle toutes les 5 minutes (code HTTP et temps de réponse). Les contrôles en échec ne comptent pas dans les temps.'));
+    } catch (e) { render(box, el('div', { class: 'error-box' }, `Erreur : ${e.message}`)); }
+  };
+  openModal(`Temps de réponse — ${host}`, el('div', { class: 'toolbar' }, seg), box);
+  await draw();
+}
+
 B.sites = async () => {
   const s = await section('sites');
-  const d = s.data || {}, up = d.uptime || {};
+  const d = s.data || {}, up = d.uptime || {}, lat = d.latency || {};
   const rows = (d.sites || []).map(x => {
     const code = x.code ?? null;
     const cls = code === null ? '' : code >= 200 && code < 400 ? 'ok' : code < 500 && code > 0 ? 'warn' : 'crit';
@@ -293,6 +316,8 @@ B.sites = async () => {
       el('div', {}, el('a', { href: x.url, target: '_blank', rel: 'noopener noreferrer' }, x.name), el('div', { class: 'muted small mono' }, x.docroot || ''), x.aliases?.length ? el('div', { class: 'muted small' }, x.aliases.join(', ')) : null),
       code === null ? '–' : badge(code === 0 ? 'injoignable' : `HTTP ${code}`, cls),
       code ? `${x.ms} ms` : '–',
+      el('button', { class: 'trend', onclick: () => siteHistory(x.name), 'aria-label': `Historique du temps de réponse de ${x.name}`, title: 'Voir l\'historique' },
+        spark((lat[x.name] || []).filter(v => v !== null)) || el('span', { class: 'muted small' }, 'Historique')),
       up[x.name] !== undefined ? `${up[x.name]} %` : '–',
       x.cert_days !== null && x.cert_days !== undefined ? badge(`${x.cert_days} j`, certCls) : badge('HTTP seul'),
       el('details', { class: 'more' }, el('summary', {}, 'Vhost'), el('div', { class: 'mono small' }, (x.confs || []).join(', ')),
@@ -303,7 +328,7 @@ B.sites = async () => {
   return {
     actions: actionBtn('Contrôler maintenant', 'collect-now', []),
     body: [
-      card(null, table(['Site', 'Statut', { label: 'Réponse', num: true }, { label: 'Dispo 7 j', num: true }, 'Certificat', ''], rows)),
+      card(null, table(['Site', 'Statut', { label: 'Réponse', num: true }, 'Tendance 24 h', { label: 'Dispo 7 j', num: true }, 'Certificat', ''], rows)),
       disabled.length ? card(`Vhosts désactivés (${disabled.length})`, table(['Fichier', ''], disabled.map(c => [el('span', { class: 'mono' }, c), actionBtn('Activer', 'site', ['enable', c], { confirm: `Activer le vhost ${c} ? (configtest + reload, retour arrière si erreur)` })]))) : null,
       stale(s.updated),
     ],
