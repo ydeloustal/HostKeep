@@ -33,6 +33,12 @@ $token = csrf_token();
 <meta name="robots" content="noindex, nofollow">
 <title>Connexion · Hostkeep</title>
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/assets/manifest.json">
+<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#131720" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-title" content="Hostkeep">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body class="login-page">
