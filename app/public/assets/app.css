@@ -98,6 +98,9 @@ button { font-family: inherit; }
 .blocks { display: flex; flex-direction: column; gap: 32px; }
 .block-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .block-head h2 { font-size: 18px; margin: 0; }
+/* "relevé il y a 3 min": next to the block title instead of a line under every block */
+.stale { margin-right: auto; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.stale::before { content: "·"; margin-right: 8px; }
 .block-body { display: flex; flex-direction: column; gap: 12px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
@@ -137,6 +140,7 @@ button { font-family: inherit; }
 .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .4s ease; }
 .bar.warn > span { background: var(--warn); }
 .bar.crit > span { background: var(--crit); }
+.bar.rel > span { background: color-mix(in srgb, var(--accent) 70%, var(--panel)); }
 .fill { min-width: 120px; }
 
 .btn { font: inherit; font-size: 14px; font-weight: 500; border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); padding: 0 16px; min-height: var(--tap); border-radius: 10px; cursor: pointer; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: background .15s, border-color .15s; }
@@ -145,6 +149,14 @@ button { font-family: inherit; }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn.danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 50%, transparent); }
 .btn.danger:hover { background: var(--crit-soft); }
+.btn.danger.solid { background: var(--crit); border-color: var(--crit); color: var(--panel); font-weight: 600; }
+.btn.danger.solid:hover { background: var(--crit); filter: brightness(1.08); }
+dialog.confirm { width: min(440px, calc(100vw - 32px)); padding: 22px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--panel); color: var(--text); box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+dialog.confirm::backdrop { background: rgba(2, 6, 23, .55); }
+dialog.confirm form { display: flex; flex-direction: column; gap: 18px; }
+dialog.confirm p { margin: 0; font-size: 15px; line-height: 1.5; }
+dialog.confirm .actions { justify-content: flex-end; }
+@media (max-width: 599px) { dialog.confirm .actions { flex-direction: column-reverse; align-items: stretch; } }
 .btn.small { padding: 0 14px; font-size: 14px; }
 .btn:disabled { opacity: .5; cursor: default; }
 .linkish { font: inherit; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-align: left; min-height: var(--tap); }
