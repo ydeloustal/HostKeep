@@ -1,0 +1,11 @@
+# Hostkeep: stockage, cron, mises à jour (chaque heure)
+[Unit]
+Description=Hostkeep : stockage, cron, mises à jour (chaque heure)
+
+[Timer]
+OnCalendar=*-*-* *:17:00
+Unit=hostkeep-collect@hourly.service
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
