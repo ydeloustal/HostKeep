@@ -3,6 +3,28 @@
 Toutes les évolutions notables de Hostkeep. Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [Non publié]
+
+### Ajouté
+- Recherche universelle (`Ctrl K`, `/` ou la loupe) : ouvre n'importe quelle page ou section et lance les actions courantes.
+- Accueil : bandeau d'état général, alertes triées par gravité et actions rapides (contrôler les sites, sauvegarder, chercher les mises à jour, lancer l'audit).
+- Raccourcis clavier (`1` à `5`, `R`, `?`) et lien « Aller au contenu ».
+- Champ de filtre sur les tableaux de plus de 8 lignes.
+- Notifications : une action continue en arrière-plan quand on ferme sa fenêtre, et annonce son résultat.
+- Bandeau « Connexion au serveur perdue » quand l'API ne répond plus.
+- Connexion : bouton Afficher / Masquer le mot de passe, avertissement de verrouillage des majuscules.
+
+### Modifié
+- Barre du haut allégée sur mobile : thème, installation et déconnexion passent dans un menu « Plus ».
+- La barre d'onglets du bas est gardée jusqu'à 1024 px (tablettes), la barre latérale prend le relais au-delà.
+- Graphiques utilisables au doigt (un appui affiche la valeur).
+- Le relevé en direct se met en pause quand l'onglet est en arrière-plan.
+- Texte de base à 16 px sur mobile.
+
+### Corrigé
+- La pastille de section active restait parfois sur la mauvaise section pendant le chargement.
+- Le focus clavier pouvait sortir de la fenêtre d'action.
+
 ## [1.0.0] — 2026-11-12
 
 Première version publique.

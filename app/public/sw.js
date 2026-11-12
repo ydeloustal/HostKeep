@@ -2,7 +2,7 @@
 /* Hostkeep service worker: makes the panel installable and shows a page when the server is unreachable.
    Network first for everything. Only static files are cached (fallback when offline):
    never the API, the logged-in pages (they hold the CSRF token) or the login form. */
-const CACHE = 'hostkeep-v1';
+const CACHE = 'hostkeep-v2';
 const OFFLINE = '/offline.html';
 const PRECACHE = [OFFLINE, '/assets/app.css', '/assets/favicon.svg', '/assets/icons/icon-192.png'];
 

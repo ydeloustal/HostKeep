@@ -70,18 +70,43 @@ const ICONS = {
   file: [['path', { d: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z' }], ['path', { d: 'M14 3v5h5' }]],
   link: [['path', { d: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1' }]],
   up: [['path', { d: 'm15 18-6-6 6-6' }]],
+  search: [['circle', { cx: 11, cy: 11, r: 7 }], ['path', { d: 'm20 20-3.5-3.5' }]],
+  more: [['path', { d: 'M12 5h.01M12 12h.01M12 19h.01', 'stroke-width': 3 }]],
+  check: [['path', { d: 'm5 12.5 4.5 4.5L19 7.5' }]],
+  bolt: [['path', { d: 'M13 2 4 14h7l-1 8 9-12h-7z' }]],
+  keyboard: [['rect', { x: 2, y: 6, width: 20, height: 12, rx: 2 }], ['path', { d: 'M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10' }]],
+  inbox: [['path', { d: 'M3 13h5l1.5 3h5L16 13h5' }], ['path', { d: 'M5.5 5h13L21 13v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5z' }]],
 };
 const icon = name => el('svg', { viewBox: '0 0 24 24', class: 'i', 'aria-hidden': 'true' }, (ICONS[name] || []).map(([t, a]) => el(t, a)));
 document.querySelectorAll('[data-icon]').forEach(s => s.replaceChildren(icon(s.dataset.icon)));
 
+/* Accent- and case-insensitive text matching (table filters, command palette). */
+const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+/* Short confirmation messages, bottom of the screen. */
+const toasts = document.getElementById('toasts');
+function toast(text, cls = '') {
+  const t = el('div', { class: `toast ${cls}`, role: cls === 'crit' ? 'alert' : 'status' }, cls ? icon(cls === 'ok' ? 'check' : 'alert') : null, el('span', {}, text));
+  toasts.append(t);
+  setTimeout(() => t.remove(), 6000);
+}
+
+/* Banner shown while the server does not answer (network cut, server down). */
+const netbar = document.getElementById('netbar');
+const setOffline = off => { netbar.hidden = !off; };
+
 async function api(params, opts = {}) {
   const q = new URLSearchParams(params).toString();
-  const res = await fetch(`/api.php?${q}`, {
-    method: opts.body ? 'POST' : 'GET',
-    headers: { 'X-CSRF-Token': CSRF, 'X-Poll': opts.poll ? '1' : '0', ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-    credentials: 'same-origin',
-  });
+  let res;
+  try {
+    res = await fetch(`/api.php?${q}`, {
+      method: opts.body ? 'POST' : 'GET',
+      headers: { 'X-CSRF-Token': CSRF, 'X-Poll': opts.poll ? '1' : '0', ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      credentials: 'same-origin',
+    });
+  } catch (e) { setOffline(true); throw new Error('serveur injoignable'); }
+  setOffline(false);
   if (res.status === 401) { location.href = '/login.php'; throw new Error('session expirée'); }
   const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
   if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
@@ -99,11 +124,23 @@ function card(title, body, actions) {
     title || actions ? el('div', { class: 'card-head' }, title ? el('h3', {}, title) : el('span'), actions ? el('div', { class: 'actions' }, actions) : null) : null,
     body);
 }
+const emptyState = text => el('p', { class: 'empty' }, icon('inbox'), el('span', {}, text));
+/* Tables longer than 8 rows get a filter field (matches any text of the row). */
 function table(headers, rows, empty = 'Rien à afficher.') {
-  if (!rows.length) return el('p', { class: 'empty' }, empty);
-  return el('div', { class: 'table-wrap' }, el('table', {},
-    el('thead', {}, el('tr', {}, headers.map(h => el('th', { class: h.num ? 'num' : null }, h.label ?? h)))),
-    el('tbody', {}, rows.map(r => el('tr', {}, r.map((c, i) => cell(headers[i], c)))))));
+  if (!rows.length) return emptyState(empty);
+  const tbody = el('tbody', {}, rows.map(r => el('tr', {}, r.map((c, i) => cell(headers[i], c)))));
+  const wrap = el('div', { class: 'table-wrap' }, el('table', {},
+    el('thead', {}, el('tr', {}, headers.map(h => el('th', { class: h.num ? 'num' : null, scope: 'col' }, h.label ?? h)))), tbody));
+  if (rows.length <= 8) return wrap;
+  const none = el('p', { class: 'empty', hidden: true }, 'Aucune ligne ne correspond au filtre.');
+  const input = el('input', { type: 'search', class: 'table-filter', placeholder: `Filtrer les ${rows.length} lignes…`, 'aria-label': 'Filtrer le tableau' });
+  input.addEventListener('input', () => {
+    const q = norm(input.value.trim());
+    let shown = 0;
+    for (const tr of tbody.children) { tr.hidden = q !== '' && !norm(tr.textContent).includes(q); if (!tr.hidden) shown++; }
+    none.hidden = shown > 0;
+  });
+  return [input, wrap, none];
 }
 /* data-label: column name shown in front of the value when rows are displayed as cards (phones). */
 function cell(h, content) {
@@ -145,7 +182,16 @@ function closeModal() {
 }
 document.getElementById('modal-close').onclick = closeModal;
 modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
+document.addEventListener('keydown', e => {
+  if (modal.hidden) return;
+  if (e.key === 'Escape') { closeModal(); return; }
+  if (e.key !== 'Tab') return;   // keep the focus inside the sheet
+  const f = [...modal.querySelectorAll('a[href], button:not([disabled]), input, select, summary, [tabindex="0"]')].filter(n => n.offsetParent !== null);
+  if (!f.length) return;
+  const first = f[0], last = f.at(-1);
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
 
 /* Confirmation dialog (native <dialog>: focus trapped, Escape cancels). Resolves true / false. */
 function confirmDialog(message, { ok = 'Confirmer', danger = false } = {}) {
@@ -174,19 +220,28 @@ function actionBtn(label, verb, args, { confirm: msg, cls = '' } = {}) {
 async function runAction(label, verb, args) {
   const status = el('p', {}, badge('en cours…', 'info'));
   const out = el('pre', { class: 'log' }, 'Lancement…');
+  const name = label.replace(/ \(\d+\)$/, '');
   openModal(`${label} — ${[verb, ...args].join(' ')}`, status, out);
-  modal.onclose = () => route(true);
+  /* Closing the sheet does not stop the job: it goes on in the background and a toast gives the result. */
+  let open = true, done = false;
+  modal.onclose = () => { open = false; if (done) route(true); else toast(`${name} : continue en arrière-plan…`); };
   let id;
   try { id = (await api({ r: 'action' }, { body: { verb, args } })).job; }
-  catch (e) { status.replaceChildren(badge('refusé', 'crit')); out.textContent = e.message; return; }
+  catch (e) { done = true; status.replaceChildren(badge('refusé', 'crit')); out.textContent = e.message; return; }
+  let fails = 0;
   const poll = async () => {
-    if (modal.hidden) return;
     try {
       const j = await api({ r: 'job', id }, { poll: true });
+      fails = 0;
       out.textContent = j.output || '(pas encore de sortie)';
       out.scrollTop = out.scrollHeight;
-      if (j.done) { status.replaceChildren(j.rc === 0 ? badge('terminé avec succès', 'ok') : badge(`échec (code ${j.rc})`, 'crit')); return; }
-    } catch (e) { out.textContent = e.message; }
+      if (j.done) {
+        done = true;
+        status.replaceChildren(j.rc === 0 ? badge('terminé avec succès', 'ok') : badge(`échec (code ${j.rc})`, 'crit'));
+        if (!open) { toast(j.rc === 0 ? `${name} : terminé` : `${name} : échec (code ${j.rc})`, j.rc === 0 ? 'ok' : 'crit'); route(true); }
+        return;
+      }
+    } catch (e) { out.textContent = e.message; if (++fails > 20) return; }
     setTimeout(poll, 1500);
   };
   poll();
@@ -196,7 +251,7 @@ async function runAction(label, verb, args) {
 function lineChart(points, series, { yFmt = v => v, yMax = null, height = 170 } = {}) {
   const W = 800, H = height, L = 56, R = 10, T = 10, B = 22;
   const wrap = el('div', {});
-  if (!points.length) { wrap.append(el('p', { class: 'empty' }, 'Pas encore de données (le collecteur passe chaque minute).')); return wrap; }
+  if (!points.length) { wrap.append(emptyState('Pas encore de données (le collecteur passe chaque minute).')); return wrap; }
   const xs = points.map(p => Number(p.t));
   const x0 = Math.min(...xs), x1 = Math.max(...xs, x0 + 1);
   let max = yMax ?? Math.max(1e-9, ...series.flatMap(s => points.map(p => Number(s.get(p)) || 0)));
@@ -220,14 +275,16 @@ function lineChart(points, series, { yFmt = v => v, yMax = null, height = 170 } 
   const hover = el('line', { y1: T, y2: H - B, class: 'hover-line', visibility: 'hidden', 'vector-effect': 'non-scaling-stroke' });
   svg.append(hover);
   const tip = el('div', { class: 'chart-tip' }, ' ');
-  svg.addEventListener('mousemove', e => {
+  const point = e => {
     const r = svg.getBoundingClientRect(), t = x0 + ((e.clientX - r.left) / r.width * W - L) / (W - L - R) * (x1 - x0);
     let best = points[0];
     for (const p of points) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
     hover.setAttribute('x1', X(best.t)); hover.setAttribute('x2', X(best.t)); hover.setAttribute('visibility', 'visible');
     tip.textContent = `${fmtDate(Number(best.t))} — ` + series.map(s => `${s.name} : ${yFmt(Number(s.get(best)) || 0)}`).join(' · ');
-  });
-  svg.addEventListener('mouseleave', () => { hover.setAttribute('visibility', 'hidden'); tip.textContent = ' '; });
+  };
+  svg.addEventListener('pointermove', point);
+  svg.addEventListener('pointerdown', point);   // touch: a tap shows the value, it stays until the next tap
+  svg.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { hover.setAttribute('visibility', 'hidden'); tip.textContent = ' '; } });
   wrap.append(svg, series.length > 1 ? el('div', { class: 'legend' }, series.map(s => el('span', {}, el('i', { style: { background: `var(${s.color})` } }), s.name))) : null, tip);
   return wrap;
 }
@@ -246,38 +303,48 @@ const LEGACY = {
 };
 
 const liveHist = [];   // last live samples, kept across page changes for the trend lines
+/* One-tap routine checks, on the home page and in the command palette (none of them changes the server state). */
+const QUICK = [['Contrôler les sites', 'collect-now'], ['Sauvegarder les bases', 'backup-now'], ['Chercher les mises à jour', 'apt-update'], ['Lancer l\'audit', 'security-scan']];
+const plural = (n, one, many = `${one}s`) => `${n} ${n > 1 ? many : one}`;
+
 B.summary = async () => {
   const [ov, live] = await Promise.all([api({ r: 'overview' }), api({ r: 'live' }, { poll: true })]);
   const m = ov.metric || {};
   const box = el('div', { class: 'stats kpis' });
+  const order = { crit: 0, warn: 1, info: 2 };
+  const all = [...ov.alerts].sort((a, b) => order[a.level] - order[b.level]);
+  const crit = all.filter(a => a.level === 'crit'), warn = all.filter(a => a.level === 'warn');
+  const state = crit.length ? 'crit' : warn.length ? 'warn' : 'ok';
+  const down = ov.sites_total - ov.sites_up;
+  const upSince = el('span', {});
   const draw = l => {
     const memUsed = l.mem_total - l.mem_avail;
     liveHist.push({ cpu: l.cpu, mem: pct(memUsed, l.mem_total), net: l.net_rx + l.net_tx });
     if (liveHist.length > 40) liveHist.shift();
     const h = k => liveHist.map(x => x[k]);
+    upSince.textContent = `${ov.host} · ${ov.os} · allumé depuis ${fmtDur(l.uptime)}`;
     box.replaceChildren(
-      stat('CPU', `${l.cpu.toFixed(0)} %`, `charge ${l.load1.toFixed(2)} · ${l.cores} cœur${l.cores > 1 ? 's' : ''}`, l.cpu, '', h('cpu')),
+      stat('CPU', `${l.cpu.toFixed(0)} %`, `charge ${l.load1.toFixed(2)} · ${plural(l.cores, 'cœur')}`, l.cpu, '', h('cpu')),
       stat('RAM', `${pct(memUsed, l.mem_total).toFixed(0)} %`, `${fmtBytes(memUsed)} / ${fmtBytes(l.mem_total)}`, pct(memUsed, l.mem_total), '', h('mem')),
-      stat('Disque', m.disk_total ? `${pct(m.disk_used, m.disk_total).toFixed(0)} %` : '–', m.disk_total ? `${fmtBytes(m.disk_used)} / ${fmtBytes(m.disk_total)}` : 'en attente', m.disk_total ? pct(m.disk_used, m.disk_total) : undefined),
+      stat('Disque', m.disk_total ? `${pct(m.disk_used, m.disk_total).toFixed(0)} %` : '–', m.disk_total ? `${fmtBytes(m.disk_total - m.disk_used)} libres sur ${fmtBytes(m.disk_total)}` : 'en attente', m.disk_total ? pct(m.disk_used, m.disk_total) : undefined),
       stat('Réseau', `↓ ${fmtRate(l.net_rx)}`, `↑ ${fmtRate(l.net_tx)}`, undefined, '', h('net')),
-      stat('Sites en ligne', `${ov.sites_up} / ${ov.sites_total}`, `uptime ${fmtDur(l.uptime)}`, undefined, ov.sites_up < ov.sites_total ? 'bad' : ''),
+      stat('Sites en ligne', `${ov.sites_up} / ${ov.sites_total}`, down ? `${plural(down, 'site')} injoignable${down > 1 ? 's' : ''}` : 'tous répondent', undefined, down ? 'bad' : ''),
     );
   };
   draw(live);
-  liveTimer = setInterval(async () => { try { draw(await api({ r: 'live' }, { poll: true })); } catch (e) { /* ignore */ } }, 5000);
-  const alerts = ov.alerts.length
-    ? ov.alerts.map(a => el('a', { class: `alert ${a.level}`, href: `#${LEGACY[a.section] || 'home'}` }, badge({ crit: 'critique', warn: 'attention', info: 'info' }[a.level], a.level), el('span', {}, a.text), el('span', { class: 'go' }, el('span', { class: 'long' }, 'Voir '), icon('chevron'))))
-    : [el('div', { class: 'alert ok' }, badge('OK', 'ok'), el('span', {}, 'Aucune alerte : tout fonctionne.'))];
-  const list = el('div', { class: 'alerts', id: 'alerts' }, alerts);
-  /* Banner: the most urgent problems first, before the numbers. */
-  const crit = ov.alerts.filter(a => a.level === 'crit');
-  const banner = crit.length ? el('div', { class: 'banner crit', role: 'status' },
-    el('span', { class: 'banner-ico' }, icon('alert')),
-    el('div', { class: 'banner-text' },
-      el('strong', {}, `${crit.length} problème${crit.length > 1 ? 's' : ''} critique${crit.length > 1 ? 's' : ''} à traiter`),
-      el('span', {}, crit.map(a => a.text.replace(/\.$/, '')).join(' · '))),
-    el('button', { class: 'btn', onclick: () => list.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, 'Voir les alertes')) : null;
-  return [banner, box, list, note(`${ov.host} · ${ov.os} · noyau ${ov.kernel}`)];
+  liveTimer = setInterval(async () => { if (document.hidden) return; try { draw(await api({ r: 'live' }, { poll: true })); } catch (e) { /* ignore */ } }, 5000);
+  const list = el('div', { class: 'alerts', id: 'alerts' }, all.length
+    ? all.map(a => el('a', { class: `alert ${a.level}`, href: `#${LEGACY[a.section] || 'home'}` }, badge({ crit: 'critique', warn: 'attention', info: 'info' }[a.level], a.level), el('span', {}, a.text), el('span', { class: 'go' }, el('span', { class: 'long' }, 'Voir '), icon('chevron'))))
+    : el('div', { class: 'alert ok' }, badge('OK', 'ok'), el('span', {}, 'Aucune alerte. Sites, services, certificats et sauvegardes sont en ordre.')));
+  /* Hero: the answer to "is everything fine?" first, then the routine checks one tap away. */
+  const title = crit.length ? `${plural(crit.length, 'problème')} critique${crit.length > 1 ? 's' : ''} à traiter`
+    : warn.length ? `${plural(warn.length, 'point')} à surveiller` : 'Tout fonctionne normalement';
+  const hero = el('div', { class: `hero ${state}` },
+    el('span', { class: 'hero-ico' }, icon(state === 'ok' ? 'check' : 'alert')),
+    el('div', { class: 'hero-text', role: 'status' }, el('strong', {}, title), upSince),
+    el('div', { class: 'hero-actions', role: 'group', 'aria-label': 'Actions rapides' },
+      QUICK.map(([label, verb]) => el('button', { class: 'btn', onclick: () => runAction(label, verb, []) }, label))));
+  return [hero, box, el('h3', { class: 'sub-head' }, all.length ? `À traiter (${all.length})` : 'Alertes'), list];
 };
 
 B.history = async () => {
@@ -436,7 +503,7 @@ B.pm2 = async () => {
   return [
     card('Applications PM2', pm2Table(pm2)),
     card('Timers systemd', table(['Prochaine exécution', 'Timer', 'Déclenche'], (d.timers || []).map(t => [el('span', { class: 'small' }, t.next), el('span', { class: 'mono' }, t.unit), el('span', { class: 'mono' }, t.activates)]))),
-    card('Crontabs', files.length ? files.map(([name, c]) => el('details', {}, el('summary', { class: 'mono' }, name), el('pre', { class: 'log' }, c || '(vide)'))) : el('p', { class: 'empty' }, 'Aucune crontab.')),
+    card('Crontabs', files.length ? files.map(([name, c]) => el('details', {}, el('summary', { class: 'mono' }, name), el('pre', { class: 'log' }, c || '(vide)'))) : emptyState('Aucune crontab.')),
     stale(cron.updated),
   ];
 };
@@ -494,7 +561,7 @@ B.audit = async () => {
         stat('IP bannies', (d.jails || []).reduce((n, j) => n + j.banned_now, 0), `${(d.jails || []).reduce((n, j) => n + j.banned_total, 0)} au total`)),
       card('Constats', [
         scan ? table(['Gravité', 'Site', 'Constat', 'Détail'], scan.findings.map(f => [badge(...SEV[f.severity]), el('strong', {}, f.site), f.title, el('span', { class: 'mono small' }, f.detail)]), 'Aucun problème trouvé.')
-          : el('p', { class: 'empty' }, 'Pas encore de scan (chaque nuit à 4 h 20).'),
+          : emptyState('Pas encore de scan (chaque nuit à 4 h 20).'),
         note('Cherche fichiers sensibles exposés (.env, .git, dumps…), dossiers listables, en-têtes, ports et config SSH/Apache. Lecture seule.'),
       ]),
     ],
@@ -518,7 +585,7 @@ B.updates = async () => {
 B.panel = async () => {
   const s = await section('panel');
   const d = s.data || {};
-  if (!d.git) return [card(null, el('p', { class: 'empty' }, 'Le panel n\'a pas été installé depuis un clone git : la mise à jour depuis cette page est indisponible.')), stale(s.updated)];
+  if (!d.git) return [card(null, emptyState('Le panel n\'a pas été installé depuis un clone git : la mise à jour depuis cette page est indisponible.')), stale(s.updated)];
   const n = (d.behind || []).length;
   const btn = actionBtn(n ? `Mettre à jour (${n})` : 'Vérifier et mettre à jour', 'self-update', [], {
     cls: n ? 'primary' : '',
@@ -552,10 +619,10 @@ B.access = async () => {
     card('fail2ban', (d.jails || []).length ? d.jails.map(j => el('details', { open: j.banned.length ? true : null },
       el('summary', {}, el('strong', {}, j.name), el('span', { class: 'muted small' }, ` — ${j.banned_now} bannie(s), ${j.failed_now} échec(s) en cours`)),
       table(['IP bannie', ''], j.banned.map(ip => [el('span', { class: 'mono' }, ip), actionBtn('Débannir', 'f2b-unban', [j.name, ip], { confirm: `Débannir ${ip} de ${j.name} ?` })]), 'Aucune IP bannie.')))
-      : el('p', { class: 'empty' }, 'fail2ban ne répond pas.')),
+      : emptyState('fail2ban ne répond pas.')),
     el('div', { class: 'grid2' },
       card('Ports en écoute', table(['Adresse', 'Processus'], (d.listening || []).map(l => [el('span', { class: 'mono' }, l.addr), l.proc]))),
-      card('Connexions SSH (7 j)', (d.logins || []).length ? el('pre', { class: 'log short' }, d.logins.join('\n')) : el('p', { class: 'empty' }, 'Aucune connexion trouvée.'))),
+      card('Connexions SSH (7 j)', (d.logins || []).length ? el('pre', { class: 'log short' }, d.logins.join('\n')) : emptyState('Aucune connexion trouvée.'))),
     stale(s.updated),
   ];
 };
@@ -596,7 +663,7 @@ B.backups = async () => {
         el('summary', {}, el('strong', {}, new Date(`${day.day}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })), el('span', { class: 'muted small' }, ` — ${day.files.length} base(s), ${fmtBytes(day.size)}`)),
         table(['Base', { label: 'Taille', num: true }, 'Faite à', ''], day.files.map(f => [el('strong', {}, f.db), fmtBytes(f.size), fmtDate(f.mtime),
           [dl(day.day, f.db), f.db === 'mysql' ? null : actionBtn('Restaurer', 'backup-restore', [day.day, f.db], { cls: 'danger', confirm: `Remplacer le contenu actuel de la base ${f.db} par la sauvegarde du ${day.day} ?\n\nUne copie de l'état actuel est faite juste avant, tu pourras revenir en arrière.` })]]))))
-        : el('p', { class: 'empty' }, 'Aucune sauvegarde pour l\'instant.')),
+        : emptyState('Aucune sauvegarde pour l\'instant.')),
       (d.pre || []).length ? card('Copies avant restauration', table(['Fichier', { label: 'Taille', num: true }, 'Date', ''], d.pre.map(p => [el('span', { class: 'mono' }, p.file), fmtBytes(p.size), fmtDate(p.mtime),
         el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', pre: p.file })}` }, 'Télécharger')]))) : null,
       note('Les sauvegardes restent sur ce serveur : télécharge de temps en temps celles qui comptent. La base « mysql » ne se restaure pas d\'ici.'),
@@ -634,7 +701,7 @@ B.files = async () => {
   let path = sessionStorage.getItem('fspath') || '';
   const crumbs = el('div', { class: 'toolbar crumbs' }), list = el('div', {});
   const roots = (await api({ r: 'fsroots' })).roots;   // HOSTKEEP_FILE_ROOTS, filtered by the root helper
-  if (!roots.length) return card(null, el('p', { class: 'empty' }, 'Aucun dossier autorisé (HOSTKEEP_FILE_ROOTS).'));
+  if (!roots.length) return card(null, emptyState('Aucun dossier autorisé (HOSTKEEP_FILE_ROOTS).'));
   if (!roots.some(r => path === r || path.startsWith(`${r}/`))) path = roots[0];
   const rootSel = el('select', { 'aria-label': 'Racine', onchange: () => go(rootSel.value) }, roots.map(r => el('option', { value: r }, r)));
   const dlUrl = p => `/api.php?${new URLSearchParams({ r: 'fsdl', path: p })}`;
@@ -648,7 +715,7 @@ B.files = async () => {
   };
   const entry = (ico, label, onclick) => el('button', { class: 'linkish entry', onclick }, icon(ico), label);
   const go = async p => {
-    render(list, el('p', { class: 'empty' }, 'Chargement…'));
+    render(list, el('div', { class: 'skeleton' }));
     try {
       const r = await api({ r: 'fs', path: p });
       path = r.path; sessionStorage.setItem('fspath', path);
@@ -703,8 +770,18 @@ async function renderPage(page) {
   document.title = `${P.title} · Hostkeep`;
   chips.replaceChildren(...P.blocks.map(([id, label]) => el('a', { href: `#${page}/${id}`, 'data-chip': id }, label)));
 
+  /* The chip of the first block in the reading zone is highlighted (and kept in view in the chip bar). */
+  const inZone = new Set();
   observer = new IntersectionObserver(entries => {
-    for (const e of entries) if (e.isIntersecting) chips.querySelectorAll('[data-chip]').forEach(c => c.classList.toggle('on', `b-${c.dataset.chip}` === e.target.id));
+    for (const e of entries) { if (e.isIntersecting) inZone.add(e.target.id); else inZone.delete(e.target.id); }
+    const cur = P.blocks.map(([id]) => id).find(id => inZone.has(`b-${id}`));
+    if (!cur) return;
+    chips.querySelectorAll('[data-chip]').forEach(c => {
+      const on = c.dataset.chip === cur;
+      if (on && !c.classList.contains('on')) chips.scrollTo({ left: c.offsetLeft - 16, behavior: 'smooth' });
+      c.classList.toggle('on', on);
+      c.toggleAttribute('aria-current', on);
+    });
   }, { rootMargin: '-120px 0px -65% 0px' });
 
   const jobs = P.blocks.map(([id, label]) => {
@@ -752,6 +829,7 @@ async function route(force = false) {
 
 /* Header health pill: number of alerts, refreshed every minute. */
 async function refreshHealth() {
+  if (document.hidden) return;
   const pill = document.getElementById('health');
   try {
     const ov = await api({ r: 'overview' }, { poll: true });
@@ -776,7 +854,95 @@ async function refreshHealth() {
 }
 
 window.addEventListener('hashchange', () => route());
-document.getElementById('refresh-btn').onclick = () => { route(true); refreshHealth(); };
+const refresh = () => { route(true); refreshHealth(); };
+document.getElementById('refresh-btn').onclick = refresh;
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshHealth(); });   // back on the tab: fresh status
+/* Go to a page or a block, even when the hash is already the current one. */
+const goTo = h => { if (location.hash === `#${h}`) route(); else location.hash = h; };
+document.getElementById('skip').onclick = e => { e.preventDefault(); document.getElementById('main').focus(); };
+
+/* "More" menu of the top bar (phones and tablets; always unfolded in the desktop sidebar). */
+const moreBtn = document.getElementById('more-btn'), menu = document.getElementById('more-menu');
+const setMenu = open => { menu.classList.toggle('open', open); moreBtn.setAttribute('aria-expanded', String(open)); };
+moreBtn.onclick = () => setMenu(!menu.classList.contains('open'));
+document.addEventListener('click', e => { if (!menu.contains(e.target) && !moreBtn.contains(e.target)) setMenu(false); });
+
+/* ---------- command palette (Ctrl/⌘ K or /): every page, block and routine action, by name ---------- */
+const KEYWORDS = {
+  summary: 'cpu ram memoire alertes etat', history: 'graphiques courbes', processes: 'top ps', certs: 'ssl https tls letsencrypt certbot',
+  traffic: 'visiteurs statistiques requetes 404 robots', services: 'systemd restart redemarrer apache nginx', pm2: 'cron timers taches node',
+  perf: 'php-fpm mariadb lent requetes', storage: 'disque espace partitions nettoyer', audit: 'scan failles env git', updates: 'apt paquets upgrade',
+  panel: 'hostkeep version git', access: 'fail2ban ssh ports ip bannies', journal: 'historique actions', databases: 'mysql mariadb sql',
+  backups: 'dump restaurer telecharger', logs: 'log erreurs', files: 'explorateur dossiers',
+};
+function paletteItems() {
+  const items = [];
+  for (const [p, P] of Object.entries(PAGES)) {
+    items.push({ label: P.title, hint: 'Page', ico: p, kw: P.desc, run: () => goTo(p) });
+    for (const [id, label] of P.blocks) items.push({ label: `${P.title} › ${label}`, hint: 'Section', ico: p, kw: KEYWORDS[id] || '', run: () => goTo(`${p}/${id}`) });
+  }
+  for (const [label, verb] of QUICK) items.push({ label, hint: 'Action', ico: 'bolt', kw: verb, run: () => runAction(label, verb, []) });
+  items.push({ label: 'Rafraîchir les données', hint: 'Action', ico: 'refresh', kw: 'recharger actualiser', run: refresh },
+    { label: 'Changer de thème (clair / sombre)', hint: 'Affichage', ico: 'theme', kw: 'dark mode nuit', run: () => document.getElementById('theme-btn').click() },
+    { label: 'Se déconnecter', hint: 'Session', ico: 'logout', kw: 'logout quitter', run: () => document.getElementById('logout-form').requestSubmit() });
+  return items;
+}
+let palette = null;
+function openPalette() {
+  if (palette) return;
+  setMenu(false);
+  const items = paletteItems();
+  let shown = items, active = 0;
+  const input = el('input', { type: 'search', placeholder: 'Page, section ou action…', role: 'combobox', 'aria-expanded': 'true', 'aria-controls': 'pal-list', 'aria-autocomplete': 'list', 'aria-label': 'Rechercher', autocomplete: 'off', spellcheck: 'false' });
+  const list = el('ul', { id: 'pal-list', role: 'listbox', 'aria-label': 'Résultats' });
+  const dlg = palette = el('dialog', { class: 'palette', 'aria-label': 'Recherche et commandes' },
+    el('div', { class: 'palette-head' }, icon('search'), input, el('button', { class: 'btn small', type: 'button', onclick: () => dlg.close() }, 'Fermer')),
+    list, el('p', { class: 'palette-foot' }, '↑ ↓ pour choisir · Entrée pour ouvrir · Échap pour fermer'));
+  const pick = i => { const it = shown[i]; if (!it) return; dlg.close(); it.run(); };
+  const mark = () => {
+    [...list.children].forEach((li, i) => li.setAttribute('aria-selected', String(i === active)));
+    const cur = list.children[active];
+    if (cur?.id) { input.setAttribute('aria-activedescendant', cur.id); cur.scrollIntoView({ block: 'nearest' }); }
+  };
+  const draw = () => {
+    const words = norm(input.value).split(/\s+/).filter(Boolean);
+    shown = items.filter(it => { const hay = norm(`${it.label} ${it.hint} ${it.kw}`); return words.every(w => hay.includes(w)); });
+    active = 0;
+    render(list, shown.length
+      ? shown.map((it, i) => el('li', { role: 'option', id: `pal-${i}`, onclick: () => pick(i), onpointermove: () => { if (active !== i) { active = i; mark(); } } }, icon(it.ico), el('span', { class: 'pal-label' }, it.label), el('span', { class: 'pal-hint' }, it.hint)))
+      : el('li', { class: 'pal-none' }, 'Aucun résultat. Essaie « sauvegarde », « ssl » ou « disque ».'));
+    mark();
+  };
+  input.addEventListener('input', draw);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (shown.length) { active = (active + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length; mark(); } }
+    else if (e.key === 'Enter') { e.preventDefault(); pick(active); }
+  });
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+  dlg.addEventListener('close', () => { dlg.remove(); palette = null; });
+  document.body.append(dlg);
+  draw();
+  dlg.showModal();
+  input.focus();
+}
+const searchBtn = document.getElementById('search-btn');
+searchBtn.onclick = openPalette;
+if (/Mac|iPhone|iPad/.test(navigator.platform)) searchBtn.querySelector('kbd').textContent = '⌘ K';
+
+/* Keyboard shortcuts: Ctrl/⌘ K or / (search), 1 to 5 (pages), R (refresh), ? (this list). */
+const SHORTCUTS = [['Ctrl K  ou  /', 'Rechercher une page ou une action'], ['1 … 5', 'Accueil, Sites, Système, Sécurité, Données'], ['R', 'Rafraîchir les données'], ['Échap', 'Fermer la fenêtre ouverte'], ['?', 'Afficher cette aide']];
+const showShortcuts = () => { setMenu(false); openModal('Raccourcis clavier', el('dl', { class: 'keys' }, SHORTCUTS.map(([k, d]) => [el('dt', {}, el('kbd', {}, k)), el('dd', {}, d)]))); };
+document.getElementById('keys-btn').onclick = showShortcuts;
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); return; }
+  if (e.key === 'Escape') setMenu(false);
+  if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input, select, textarea, dialog') || !modal.hidden) return;
+  const pages = Object.keys(PAGES);
+  if (e.key === '/') { e.preventDefault(); openPalette(); }
+  else if (pages[Number(e.key) - 1]) goTo(pages[Number(e.key) - 1]);
+  else if (e.key.toLowerCase() === 'r') refresh();
+  else if (e.key === '?') showShortcuts();
+});
 
 /* theme: system by default, toggle stored per browser */
 const root = document.documentElement;

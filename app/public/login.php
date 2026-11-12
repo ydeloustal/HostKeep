@@ -49,11 +49,18 @@ $token = csrf_token();
   <?php if ($error !== ''): ?><p class="form-error" role="alert"><?= h($error) ?></p><?php endif; ?>
   <form method="post" autocomplete="on">
     <input type="hidden" name="csrf" value="<?= h($token) ?>">
-    <label>Identifiant<input name="user" autocomplete="username" required autofocus></label>
-    <label>Mot de passe<input name="pass" type="password" autocomplete="current-password" required></label>
-    <button type="submit" class="btn primary">Se connecter</button>
+    <label>Identifiant<input name="user" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus></label>
+    <label>Mot de passe
+      <span class="pw-field">
+        <input name="pass" id="pass" type="password" autocomplete="current-password" required>
+        <button type="button" id="pw-toggle" aria-controls="pass" aria-pressed="false" hidden>Afficher</button>
+      </span>
+    </label>
+    <p class="caps" id="caps" role="status" hidden>Verrouillage des majuscules activé.</p>
+    <button type="submit" class="btn primary" id="login-submit">Se connecter</button>
   </form>
   <p class="login-note">Les échecs répétés entraînent un bannissement temporaire de l'adresse IP.</p>
 </main>
+<script src="/assets/login.js"></script>
 </body>
 </html>
