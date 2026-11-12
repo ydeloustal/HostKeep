@@ -98,6 +98,8 @@ app)
   find "$APP/public" -type d -exec chmod 755 {} +; find "$APP/public" -type f -exec chmod 644 {} +
   find "$APP/src" "$APP/bin" -type d -exec chmod 750 {} +; find "$APP/src" "$APP/bin" -type f -exec chmod 640 {} +
   [[ -e $APP/.env ]] || install -o root -g hostkeep -m 640 "$SRC/.env" "$APP/.env"
+  # The "Mettre à jour" button pulls this clone, then reruns this script.
+  if [[ -d $SRC/.git ]]; then printf '%s\n' "$SRC" > /var/lib/hostkeep/source; else rm -f /var/lib/hostkeep/source; fi
   for f in $(find "$APP" -name '*.php'); do php -l "$f" >/dev/null; done
 
   step "base de données"

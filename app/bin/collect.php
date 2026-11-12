@@ -28,7 +28,7 @@ putenv('LC_ALL=C');
 $mode = $argv[1] ?? 'minute';
 $modes = ['minute' => ['metrics', 'services', 'processes'],
     '5min' => ['sites', 'certs', 'pm2', 'security', 'databases', 'traffic', 'perf'],
-    'hourly' => ['storage', 'cron', 'updates', 'logkeys', 'backups'],
+    'hourly' => ['storage', 'cron', 'updates', 'logkeys', 'backups', 'panel'],
     'purge' => ['purge'],
     'backup' => ['backup', 'backups'],     // nightly database dumps
     'scan' => ['scan'],                    // nightly security scan of the sites
@@ -351,6 +351,27 @@ function c_updates(): void
         }
     }
     save('updates', ['count' => count($pk), 'security_count' => count(array_filter($pk, fn($p) => $p['security'])), 'packages' => $pk]);
+}
+
+/** Version of the panel and commits waiting on its git remote (see the "self-update" action). */
+function c_panel(): void
+{
+    $src = trim((string) @file_get_contents('/var/lib/hostkeep/source'));
+    if ($src === '' || !is_dir("$src/.git")) {
+        save('panel', ['git' => false]);
+        return;
+    }
+    $git = 'GIT_TERMINAL_PROMPT=0 git -C ' . escapeshellarg($src) . ' ';
+    sh('timeout 60 ' . $git . 'fetch --quiet --prune');
+    [$hash, $ts, $subject] = array_pad(explode("\t", trim(sh($git . "log -1 --format='%h%x09%ct%x09%s'")), 3), 3, '');
+    $behind = [];
+    foreach (lines(sh($git . "log --format='%h%x09%ct%x09%s' 'HEAD..@{u}'")) as $l) {
+        [$h, $t, $s] = array_pad(explode("\t", $l, 3), 3, '');
+        $behind[] = ['hash' => $h, 'ts' => (int) $t, 'subject' => $s];
+    }
+    save('panel', ['git' => true, 'source' => $src, 'branch' => trim(sh($git . 'rev-parse --abbrev-ref HEAD')),
+        'remote' => trim(sh($git . "rev-parse --abbrev-ref '@{u}'")), 'hash' => $hash, 'ts' => (int) $ts, 'subject' => $subject,
+        'behind' => $behind, 'dirty' => trim(sh($git . 'status --porcelain --untracked-files=no')) !== '']);
 }
 
 function c_logkeys(): void

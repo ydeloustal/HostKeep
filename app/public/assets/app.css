@@ -126,6 +126,8 @@ button { font-family: inherit; }
 .banner .btn { background: var(--crit); border-color: var(--crit); color: var(--panel); font-weight: 600; }
 .banner .btn:hover { background: var(--crit); filter: brightness(1.08); }
 .stat.bad .value { color: var(--crit); }
+.stat.warn-stat { border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); }
+.stat.warn-stat .value { color: var(--warn); }
 .bar { height: 6px; min-width: 60px; background: var(--panel-2); border-radius: 3px; overflow: hidden; margin-top: 8px; }
 .bar > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width .4s ease; }
 .bar.warn > span { background: var(--warn); }
