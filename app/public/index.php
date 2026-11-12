@@ -30,12 +30,17 @@ $nav = ['home' => 'Accueil', 'sites' => 'Sites', 'system' => 'Système', 'securi
 <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
+<a class="skip" id="skip" href="#home">Aller au contenu</a>
+<div class="netbar" id="netbar" role="status" hidden>Connexion au serveur perdue. Nouvelle tentative en cours…</div>
 <header class="topbar">
   <a class="brand" href="#home"><img src="/assets/favicon.svg" alt=""><span><strong>Hostkeep</strong><small>Panel d'administration</small></span></a>
   <div class="server" aria-label="Serveur">
     <span class="dot" aria-hidden="true"></span>
     <span><span class="mono" id="hostname"><?= h(gethostname() ?: '') ?></span><small id="server-sub"></small></span>
   </div>
+  <button class="search-btn" id="search-btn" type="button" aria-label="Rechercher une page ou une action" aria-keyshortcuts="Control+K">
+    <span class="ico" data-icon="search"></span><span class="lbl">Rechercher…</span><kbd aria-hidden="true">Ctrl K</kbd>
+  </button>
   <nav class="mainnav" aria-label="Sections">
     <?php foreach ($nav as $id => $label): ?>
       <a href="#<?= $id ?>" data-nav="<?= $id ?>"><span class="ico" data-icon="<?= $id ?>"></span><span class="lbl"><?= h($label) ?></span><span class="count" data-count="<?= $id ?>" hidden></span></a>
@@ -43,16 +48,20 @@ $nav = ['home' => 'Accueil', 'sites' => 'Sites', 'system' => 'Système', 'securi
   </nav>
   <div class="topbar-right">
     <a class="health" id="health" href="#home" hidden></a>
-    <button class="icon-btn" id="install-btn" title="Installer l'application" aria-label="Installer l'application" hidden><span class="ico" data-icon="install"></span><span class="lbl">Installer l'appli</span></button>
-    <button class="icon-btn" id="refresh-btn" title="Rafraîchir" aria-label="Rafraîchir"><span class="ico" data-icon="refresh"></span><span class="lbl">Rafraîchir</span></button>
-    <button class="icon-btn" id="theme-btn" title="Thème clair / sombre" aria-label="Changer de thème"><span class="ico" data-icon="theme"></span><span class="lbl" id="theme-lbl">Thème sombre</span></button>
-    <form method="post" action="/logout.php">
-      <input type="hidden" name="csrf" value="<?= h($token) ?>">
-      <button class="icon-btn" type="submit" title="Se déconnecter" aria-label="Se déconnecter"><span class="ico" data-icon="logout"></span><span class="lbl">Se déconnecter</span></button>
-    </form>
+    <button class="icon-btn" id="refresh-btn" type="button" title="Rafraîchir" aria-label="Rafraîchir"><span class="ico" data-icon="refresh"></span><span class="lbl">Rafraîchir</span></button>
+    <button class="icon-btn more-btn" id="more-btn" type="button" aria-label="Plus d'options" aria-expanded="false" aria-controls="more-menu"><span class="ico" data-icon="more"></span></button>
+    <div class="menu" id="more-menu">
+      <button class="icon-btn" id="install-btn" type="button" hidden><span class="ico" data-icon="install"></span><span class="lbl">Installer l'appli</span></button>
+      <button class="icon-btn" id="theme-btn" type="button"><span class="ico" data-icon="theme"></span><span class="lbl" id="theme-lbl">Thème sombre</span></button>
+      <button class="icon-btn" id="keys-btn" type="button"><span class="ico" data-icon="keyboard"></span><span class="lbl">Raccourcis clavier</span></button>
+      <form method="post" action="/logout.php" id="logout-form">
+        <input type="hidden" name="csrf" value="<?= h($token) ?>">
+        <button class="icon-btn" type="submit"><span class="ico" data-icon="logout"></span><span class="lbl">Se déconnecter</span></button>
+      </form>
+    </div>
   </div>
 </header>
-<main class="content">
+<main class="content" id="main" tabindex="-1">
   <div class="page-head">
     <div>
       <h1 id="page-title">Accueil</h1>
@@ -69,6 +78,7 @@ $nav = ['home' => 'Accueil', 'sites' => 'Sites', 'system' => 'Système', 'securi
     <div id="modal-body"></div>
   </div>
 </div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
 <script src="/assets/app.js"></script>
 </body>
 </html>
