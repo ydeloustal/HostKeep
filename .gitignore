@@ -1,0 +1,28 @@
+# Configuration locale (identifiants, hash du mot de passe)
+.env
+.env.*
+!.env.example
+app/config.php
+
+# Dépendances et builds
+vendor/
+node_modules/
+dist/
+build/
+
+# Logs et fichiers temporaires
+*.log
+logs/
+tmp/
+*.tmp
+*.swp
+*~
+
+# Éditeurs et OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Outils locaux
+.claude/
