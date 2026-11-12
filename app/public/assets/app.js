@@ -91,7 +91,13 @@ function table(headers, rows, empty = 'Rien à afficher.') {
   if (!rows.length) return el('p', { class: 'empty' }, empty);
   return el('div', { class: 'table-wrap' }, el('table', {},
     el('thead', {}, el('tr', {}, headers.map(h => el('th', { class: h.num ? 'num' : null }, h.label ?? h)))),
-    el('tbody', {}, rows.map(r => el('tr', {}, r.map((c, i) => el('td', { class: headers[i]?.num ? 'num' : null }, c)))))));
+    el('tbody', {}, rows.map(r => el('tr', {}, r.map((c, i) => cell(headers[i], c)))))));
+}
+/* data-label: column name shown in front of the value when rows are displayed as cards (phones). */
+function cell(h, content) {
+  const td = el('td', { class: h?.num ? 'num' : null, 'data-label': typeof h === 'string' ? h : (h?.label ?? '') }, content);
+  if (td.children.length && [...td.children].every(k => k.matches('.btn'))) td.classList.add('actions-cell');
+  return td;
 }
 function stat(label, value, sub, p, cls) {
   return el('div', { class: `stat ${cls || ''}` }, el('div', { class: 'label' }, label), el('div', { class: 'value' }, value), sub ? el('div', { class: 'sub' }, sub) : null, p !== undefined ? bar(p) : null);
@@ -219,7 +225,7 @@ B.summary = async () => {
   draw(live);
   liveTimer = setInterval(async () => { try { draw(await api({ r: 'live' }, { poll: true })); } catch (e) { /* ignore */ } }, 5000);
   const alerts = ov.alerts.length
-    ? ov.alerts.map(a => el('a', { class: `alert ${a.level}`, href: `#${LEGACY[a.section] || 'home'}` }, badge({ crit: 'critique', warn: 'attention', info: 'info' }[a.level], a.level), el('span', {}, a.text), el('span', { class: 'go' }, 'Voir →')))
+    ? ov.alerts.map(a => el('a', { class: `alert ${a.level}`, href: `#${LEGACY[a.section] || 'home'}` }, badge({ crit: 'critique', warn: 'attention', info: 'info' }[a.level], a.level), el('span', {}, a.text), el('span', { class: 'go' }, el('span', { class: 'long' }, 'Voir '), '→')))
     : [el('div', { class: 'alert ok' }, badge('OK', 'ok'), el('span', {}, 'Aucune alerte : tout fonctionne.'))];
   return [box, el('div', { class: 'alerts' }, alerts), note(`${ov.host} · ${ov.os} · noyau ${ov.kernel}`)];
 };
@@ -639,7 +645,9 @@ async function refreshHealth() {
     const ov = await api({ r: 'overview' }, { poll: true });
     const crit = ov.alerts.filter(a => a.level === 'crit').length, warn = ov.alerts.filter(a => a.level === 'warn').length;
     pill.className = `health ${crit ? 'crit' : warn ? 'warn' : 'ok'}`;
-    pill.textContent = crit ? `${crit} critique${crit > 1 ? 's' : ''}` : warn ? `${warn} alerte${warn > 1 ? 's' : ''}` : 'Tout va bien';
+    const long = crit ? `${crit} critique${crit > 1 ? 's' : ''}` : warn ? `${warn} alerte${warn > 1 ? 's' : ''}` : 'Tout va bien';
+    pill.replaceChildren(el('span', { class: 'short' }, crit || warn || 'OK'), el('span', { class: 'long' }, long));
+    pill.setAttribute('aria-label', long);
     pill.hidden = false;
   } catch (e) { /* ignore */ }
 }
