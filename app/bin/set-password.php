@@ -7,8 +7,13 @@ if (PHP_SAPI !== 'cli' || posix_geteuid() !== 0) {
     fwrite(STDERR, "À lancer avec sudo, en ligne de commande.\n");
     exit(1);
 }
-$file = __DIR__ . '/../config.php';
-$cfg = is_file($file) ? require $file : [];
+require __DIR__ . '/../src/env.php';
+$file = __DIR__ . '/../.env';
+if (!is_file($file)) {
+    fwrite(STDERR, "Fichier $file introuvable : relance l'installation (install.sh app).\n");
+    exit(1);
+}
+$current = env('HOSTKEEP_ADMIN_USER', 'admin');
 
 function ask(string $prompt, bool $hidden = false): string
 {
@@ -24,7 +29,7 @@ function ask(string $prompt, bool $hidden = false): string
     return $v;
 }
 
-$user = ask('Identifiant [' . ($cfg['admin_user'] ?? 'admin') . '] : ') ?: ($cfg['admin_user'] ?? 'admin');
+$user = ask("Identifiant [$current] : ") ?: $current;
 if (!preg_match('/^[A-Za-z0-9_.@-]{3,40}$/', $user)) {
     fwrite(STDERR, "Identifiant invalide (3 à 40 caractères : lettres, chiffres, _ . @ -).\n");
     exit(1);
@@ -38,10 +43,28 @@ if (ask('Confirmation : ', true) !== $p1) {
     fwrite(STDERR, "Les deux saisies diffèrent.\n");
     exit(1);
 }
-$cfg['admin_user'] = $user;
-$cfg['password_hash'] = password_hash($p1, PASSWORD_DEFAULT);
+/** Replaces KEY=... in the .env lines (or appends it), value single-quoted: a bcrypt hash contains "$". */
+function set_line(array $lines, string $key, string $value): array
+{
+    $out = [];
+    $done = false;
+    foreach ($lines as $l) {
+        if (preg_match('/^\s*' . $key . '\s*=/', $l)) {
+            $l = "$key='$value'";
+            $done = true;
+        }
+        $out[] = $l;
+    }
+    if (!$done) {
+        $out[] = "$key='$value'";
+    }
+    return $out;
+}
+$lines = file($file, FILE_IGNORE_NEW_LINES);
+$lines = set_line($lines, 'HOSTKEEP_ADMIN_USER', $user);
+$lines = set_line($lines, 'HOSTKEEP_PASSWORD_HASH', password_hash($p1, PASSWORD_DEFAULT));
 $tmp = "$file.tmp";
-file_put_contents($tmp, "<?php\nreturn " . var_export($cfg, true) . ";\n");
+file_put_contents($tmp, implode("\n", $lines) . "\n");
 chown($tmp, 'root');
 chgrp($tmp, 'hostkeep');
 chmod($tmp, 0640);

@@ -1,17 +1,13 @@
 <?php
 declare(strict_types=1);
 
+require __DIR__ . '/env.php';
+
 const APP_ROOT = __DIR__ . '/..';
 const STATE_DIR = '/var/lib/hostkeep';
 const JOBS_DIR = STATE_DIR . '/jobs';
 const AUTH_LOG = '/var/log/hostkeep/auth.log';
 const HELPER = '/usr/local/sbin/hostkeep-action';
-
-function cfg(): array
-{
-    static $c = null;
-    return $c ??= require APP_ROOT . '/config.php';
-}
 
 /** Web connection: OS user "hostkeep" authenticates through the MariaDB unix socket. */
 function db(): PDO
