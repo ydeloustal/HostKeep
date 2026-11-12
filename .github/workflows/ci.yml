@@ -1,0 +1,55 @@
+# Checks run on every push and pull request. The "Mettre à jour" button of the panel installs
+# the tracked branch as root: protect it on GitHub so only commits that pass these checks reach it.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Vérifications
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: PHP — syntaxe (8.2 et la version du runner)
+        run: |
+          php -v | head -1
+          find app -name '*.php' -print0 | xargs -0 -n1 php -l
+          docker run --rm -v "$PWD:/src" -w /src php:8.2-cli sh -c "find app -name '*.php' -print0 | xargs -0 -n1 php -l"
+
+      - name: Shell — shellcheck
+        run: shellcheck -S warning install.sh system/hostkeep-action
+
+      - name: JavaScript — syntaxe
+        run: for f in $(git ls-files 'app/public/*.js'); do node --check "$f"; done
+
+      - name: Manifest PWA — JSON valide
+        run: for f in $(git ls-files 'app/public/*.json'); do python3 -m json.tool "$f" >/dev/null; done
+
+      - name: sudoers — syntaxe
+        run: sudo visudo -cf system/sudoers-hostkeep
+
+  schema:
+    name: Schéma MariaDB
+    runs-on: ubuntu-24.04
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: ci
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Charger schema.sql deux fois (doit être idempotent)
+        run: |
+          mysql -h 127.0.0.1 -uroot -pci < app/bin/schema.sql
+          mysql -h 127.0.0.1 -uroot -pci < app/bin/schema.sql
+          mysql -h 127.0.0.1 -uroot -pci -e 'SHOW TABLES' hostkeep

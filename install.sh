@@ -90,7 +90,7 @@ app)
 
   step "code de l'application ($APP)"
   install -d -o root -g root -m 755 "$APP"
-  rm -rf "$APP/src" "$APP/bin"
+  rm -rf "${APP:?}/src" "${APP:?}/bin"
   find "$APP/public" -mindepth 1 -maxdepth 1 ! -name .well-known -exec rm -rf {} + 2>/dev/null || true
   cp -r "$SRC/app/public" "$SRC/app/src" "$SRC/app/bin" "$APP/"
   chown -R root:hostkeep "$APP/public" "$APP/src" "$APP/bin"
@@ -100,7 +100,7 @@ app)
   [[ -e $APP/.env ]] || install -o root -g hostkeep -m 640 "$SRC/.env" "$APP/.env"
   # The "Mettre à jour" button pulls this clone, then reruns this script.
   if [[ -d $SRC/.git ]]; then printf '%s\n' "$SRC" > /var/lib/hostkeep/source; else rm -f /var/lib/hostkeep/source; fi
-  for f in $(find "$APP" -name '*.php'); do php -l "$f" >/dev/null; done
+  find "$APP" -name '*.php' -print0 | xargs -0 -n1 php -l >/dev/null
 
   step "base de données"
   mysql < "$SRC/app/bin/schema.sql"

@@ -55,6 +55,7 @@ const ICONS = {
   sun: [['circle', { cx: 12, cy: 12, r: 4 }], ['path', { d: 'M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4' }]],
   alert: [['path', { d: 'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z' }], ['path', { d: 'M12 9v4M12 17h.01' }]],
   chevron: [['path', { d: 'm9 6 6 6-6 6' }]],
+  install: [['path', { d: 'M12 3v12M7 10l5 5 5-5' }], ['path', { d: 'M5 21h14' }]],
   logout: [['path', { d: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9' }]],
   x: [['path', { d: 'M18 6 6 18M6 6l12 12' }]],
   folder: [['path', { d: 'M3 6a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z' }]],
@@ -281,9 +282,32 @@ B.processes = async () => {
   return [el('div', { class: 'grid2' }, card('Par RAM', t(s.data?.by_mem)), card('Par CPU', t(s.data?.by_cpu))), stale(s.updated)];
 };
 
+/* Response time of one site over 7 or 30 days, in the modal. */
+async function siteHistory(host) {
+  let days = '7';
+  const seg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Période' }), box = el('div', { class: 'stack' }, el('div', { class: 'skeleton' }));
+  const draw = async () => {
+    seg.replaceChildren(...[['7', '7 j'], ['30', '30 j']].map(([v, l]) => el('button', { class: v === days ? 'on' : '', 'aria-pressed': String(v === days), onclick: () => { days = v; draw(); } }, l)));
+    try {
+      const h = await api({ r: 'sitehistory', host, days });
+      const pts = h.points.map(p => ({ ...p, ms: p.ms === null ? null : Number(p.ms), max_ms: p.max_ms === null ? null : Number(p.max_ms) }));
+      render(box,
+        stats(
+          stat('Temps moyen', h.avg !== null ? `${h.avg} ms` : '–', `sur ${h.days} jours`),
+          stat('Pire mesure', h.max ? `${h.max} ms` : '–', 'moyenne la plus haute d\'un créneau'),
+          stat('Contrôles en échec', `${num(h.errors)} / ${num(h.checks)}`, h.checks ? `${(100 * (h.checks - h.errors) / h.checks).toFixed(2)} % de réussite` : 'aucun contrôle', undefined, h.errors ? 'warn-stat' : ''),
+        ),
+        card(null, lineChart(pts, [{ name: 'Moyenne', color: '--c1', get: p => p.ms }, { name: 'Pire', color: '--c2', get: p => p.max_ms }], { yFmt: v => `${v.toFixed(0)} ms` })),
+        note('Un contrôle toutes les 5 minutes (code HTTP et temps de réponse). Les contrôles en échec ne comptent pas dans les temps.'));
+    } catch (e) { render(box, el('div', { class: 'error-box' }, `Erreur : ${e.message}`)); }
+  };
+  openModal(`Temps de réponse — ${host}`, el('div', { class: 'toolbar' }, seg), box);
+  await draw();
+}
+
 B.sites = async () => {
   const s = await section('sites');
-  const d = s.data || {}, up = d.uptime || {};
+  const d = s.data || {}, up = d.uptime || {}, lat = d.latency || {};
   const rows = (d.sites || []).map(x => {
     const code = x.code ?? null;
     const cls = code === null ? '' : code >= 200 && code < 400 ? 'ok' : code < 500 && code > 0 ? 'warn' : 'crit';
@@ -292,6 +316,8 @@ B.sites = async () => {
       el('div', {}, el('a', { href: x.url, target: '_blank', rel: 'noopener noreferrer' }, x.name), el('div', { class: 'muted small mono' }, x.docroot || ''), x.aliases?.length ? el('div', { class: 'muted small' }, x.aliases.join(', ')) : null),
       code === null ? '–' : badge(code === 0 ? 'injoignable' : `HTTP ${code}`, cls),
       code ? `${x.ms} ms` : '–',
+      el('button', { class: 'trend', onclick: () => siteHistory(x.name), 'aria-label': `Historique du temps de réponse de ${x.name}`, title: 'Voir l\'historique' },
+        spark((lat[x.name] || []).filter(v => v !== null)) || el('span', { class: 'muted small' }, 'Historique')),
       up[x.name] !== undefined ? `${up[x.name]} %` : '–',
       x.cert_days !== null && x.cert_days !== undefined ? badge(`${x.cert_days} j`, certCls) : badge('HTTP seul'),
       el('details', { class: 'more' }, el('summary', {}, 'Vhost'), el('div', { class: 'mono small' }, (x.confs || []).join(', ')),
@@ -302,7 +328,7 @@ B.sites = async () => {
   return {
     actions: actionBtn('Contrôler maintenant', 'collect-now', []),
     body: [
-      card(null, table(['Site', 'Statut', { label: 'Réponse', num: true }, { label: 'Dispo 7 j', num: true }, 'Certificat', ''], rows)),
+      card(null, table(['Site', 'Statut', { label: 'Réponse', num: true }, 'Tendance 24 h', { label: 'Dispo 7 j', num: true }, 'Certificat', ''], rows)),
       disabled.length ? card(`Vhosts désactivés (${disabled.length})`, table(['Fichier', ''], disabled.map(c => [el('span', { class: 'mono' }, c), actionBtn('Activer', 'site', ['enable', c], { confirm: `Activer le vhost ${c} ? (configtest + reload, retour arrière si erreur)` })]))) : null,
       stale(s.updated),
     ],
@@ -473,8 +499,12 @@ B.panel = async () => {
     cls: n ? 'primary' : '',
     confirm: 'Récupérer la dernière version depuis GitHub (git pull) et réinstaller le panel ? La page sera indisponible quelques secondes.',
   });
+  const back = d.previous ? actionBtn(`Revenir à ${d.previous.hash}`, 'self-rollback', [], {
+    cls: 'danger',
+    confirm: `Revenir à la version précédente (${d.previous.hash} — ${d.previous.subject}) et réinstaller le panel ?`,
+  }) : null;
   return {
-    actions: btn,
+    actions: [back, btn],
     body: [
       stats(
         stat('Version installée', d.hash || '–', d.ts ? `${fmtDate(d.ts)} · ${d.subject}` : ''),
@@ -483,7 +513,8 @@ B.panel = async () => {
       ),
       d.dirty ? el('div', { class: 'alert warn' }, badge('attention', 'warn'), el('span', {}, `Des fichiers ont été modifiés à la main dans ${d.source} : la mise à jour sera refusée.`)) : null,
       n ? card('À installer', table(['Commit', 'Date', 'Description'], d.behind.map(c => [el('span', { class: 'mono' }, c.hash), fmtDate(c.ts), c.subject]))) : null,
-      note('git pull (avance rapide uniquement) dans le dépôt source, puis ./install.sh app : la configuration (.env) et le mot de passe sont conservés.'),
+      d.previous ? note(`Version précédente gardée pour un retour arrière : ${d.previous.hash} (${fmtDate(d.previous.ts)}) — ${d.previous.subject}.`) : null,
+      note('git pull (avance rapide uniquement) dans le dépôt source, puis ./install.sh app : la configuration (.env) et le mot de passe sont conservés. Après une mise à jour, « Revenir à… » réinstalle la version d\'avant.'),
       stale(s.updated),
     ],
   };
@@ -736,6 +767,14 @@ document.getElementById('theme-btn').onclick = () => {
 };
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncThemeBtn);
 syncThemeBtn();
+
+/* Installable app (PWA): service worker + "Installer l'appli" button when the browser offers it. */
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => { /* not fatal */ });
+let installEvt = null;
+const installBtn = document.getElementById('install-btn');
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; installBtn.hidden = false; });
+window.addEventListener('appinstalled', () => { installEvt = null; installBtn.hidden = true; });
+installBtn.onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; installBtn.hidden = true; };
 
 route();
 refreshHealth();

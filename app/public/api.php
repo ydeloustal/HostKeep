@@ -30,6 +30,9 @@ try {
         case 'overview':
             json_out(overview());
 
+        case 'sitehistory':
+            json_out(site_history((string) ($_GET['host'] ?? ''), (string) ($_GET['days'] ?? '7')));
+
         case 'history':
             json_out(history((string) ($_GET['range'] ?? '24h')));
 
@@ -41,6 +44,7 @@ try {
             $snap = snapshot($name);
             if ($name === 'sites' && $snap) {
                 $snap['data']['uptime'] = site_uptime();
+                $snap['data']['latency'] = site_latency_24h();
             }
             json_out($snap ?? ['updated' => 0, 'data' => null]);
 
@@ -142,6 +146,44 @@ function site_uptime(): array
         $out[$r['host']] = round(100 * $r['ok'] / max(1, $r['n']), 2);
     }
     return $out;
+}
+
+/** Average response time of each site, hour by hour over the last 24 h (null = no successful check). */
+function site_latency_24h(): array
+{
+    $since = time() - 86400;
+    $rows = db()->query("SELECT host, FLOOR((ts - $since) / 3600) AS h, ROUND(AVG(CASE WHEN code BETWEEN 200 AND 499 THEN ms END)) AS ms
+                         FROM site_checks WHERE ts >= $since GROUP BY host, h")->fetchAll();
+    $out = [];
+    foreach ($rows as $r) {
+        $out[$r['host']] ??= array_fill(0, 24, null);
+        $h = min(23, (int) $r['h']);
+        $out[$r['host']][$h] = $r['ms'] === null ? null : (int) $r['ms'];
+    }
+    return $out;
+}
+
+/** Response time history of one site: average / worst time and failed checks per bucket. */
+function site_history(string $host, string $days): array
+{
+    if (!preg_match('/^[A-Za-z0-9.-]{1,255}$/D', $host)) {
+        return ['error' => 'site invalide'];
+    }
+    [$span, $bucket] = $days === '30' ? [30 * 86400, 6 * 3600] : [7 * 86400, 3600];
+    $since = time() - $span;
+    $q = db()->prepare("SELECT FLOOR(ts / $bucket) * $bucket AS t,
+                               ROUND(AVG(CASE WHEN code BETWEEN 200 AND 499 THEN ms END)) AS ms,
+                               MAX(CASE WHEN code BETWEEN 200 AND 499 THEN ms END) AS max_ms,
+                               SUM(code NOT BETWEEN 200 AND 499) AS errors, COUNT(*) AS n
+                        FROM site_checks WHERE host = ? AND ts >= ? GROUP BY t ORDER BY t");
+    $q->execute([$host, $since]);
+    $points = $q->fetchAll();
+    $n = array_sum(array_column($points, 'n'));
+    $err = array_sum(array_column($points, 'errors'));
+    $ok = array_filter(array_column($points, 'ms'), static fn($v) => $v !== null);
+    return ['host' => $host, 'days' => $days === '30' ? 30 : 7, 'points' => $points,
+        'checks' => $n, 'errors' => $err, 'avg' => $ok ? round(array_sum($ok) / count($ok)) : null,
+        'max' => $points ? max(array_map('intval', array_column($points, 'max_ms'))) : null];
 }
 
 function overview(): array
