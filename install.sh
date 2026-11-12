@@ -32,8 +32,25 @@ domain() {
   [[ $d =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,}$ && $d != admin.example.com ]] || die "renseigne HOSTKEEP_DOMAIN dans $(env_file)."
   echo "$d"
 }
+# Nginx < 1.25.1 (Debian 12) has no "http2 on;": use the older "listen ... http2" form instead.
+nginx_compat() {
+  local v; v=$(nginx -v 2>&1 | sed -n 's#.*nginx/\([0-9.]*\).*#\1#p')
+  if [[ -n $v ]] && dpkg --compare-versions "$v" lt 1.25.1; then
+    sed -i -e '/^[[:space:]]*http2 on;/d' -e 's/listen 443 ssl;/listen 443 ssl http2;/' -e 's/listen \[::\]:443 ssl;/listen [::]:443 ssl http2;/' "$1"
+  fi
+}
 # Copies a template from system/, replacing __DOMAIN__ and __PHP_VERSION__.
 render() { sed -e "s/__DOMAIN__/${3:-}/g" -e "s/__PHP_VERSION__/$(php_version)/g" "$SRC/system/$1" > "$2"; chmod 644 "$2"; }
+
+# Debian 12+ logs to journald only (no /var/log/auth.log): fail2ban's default sshd jail then fails
+# to start, taking every other jail down. Read sshd from the journal instead.
+fail2ban_journal() {
+  [[ -e /var/log/auth.log ]] && return 0
+  [[ -e /etc/fail2ban/jail.d/00-hostkeep-journal.conf ]] && return 0
+  printf '%s\n' "# Hostkeep: no /var/log/auth.log on this system, read sshd from the systemd journal." "[sshd]" "backend = systemd" \
+    > /etc/fail2ban/jail.d/00-hostkeep-journal.conf
+  echo "fail2ban : jail sshd basculée sur le journal systemd (pas de /var/log/auth.log)."
+}
 
 certificate() {   # $1 = apache2|nginx
   local d email; d=$(domain); email=$(env_get HOSTKEEP_LETSENCRYPT_EMAIL)
@@ -49,8 +66,10 @@ deps)
   step "paquets système"
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
-  apt-get install -y php-fpm php-cli php-mysql php-curl php-mbstring mariadb-server fail2ban certbot sudo curl python3 logrotate
-  systemctl enable --now mariadb fail2ban
+  apt-get install -y php-fpm php-cli php-mysql php-curl php-mbstring mariadb-server fail2ban python3-systemd certbot sudo curl python3 logrotate
+  fail2ban_journal
+  systemctl enable --now mariadb
+  systemctl enable -q fail2ban && systemctl restart fail2ban
   echo "Paquets installés (PHP $(php_version))." ;;
 
 app)
@@ -96,10 +115,11 @@ app)
   systemctl enable -q "php$PHPV-fpm" && systemctl reload-or-restart "php$PHPV-fpm"
 
   step "fail2ban"
+  fail2ban_journal
   install -m 644 "$SRC/system/fail2ban-filter-hostkeep.conf" /etc/fail2ban/filter.d/hostkeep.conf
   install -m 644 "$SRC/system/fail2ban-jail-hostkeep.conf" /etc/fail2ban/jail.d/hostkeep.conf
   if ! fail2ban-client -t >/dev/null; then rm -f /etc/fail2ban/jail.d/hostkeep.conf /etc/fail2ban/filter.d/hostkeep.conf; die "config fail2ban invalide : retirée."; fi
-  fail2ban-client reload >/dev/null
+  systemctl is-active -q fail2ban && fail2ban-client reload >/dev/null || systemctl restart fail2ban
 
   step "MariaDB : journal des requêtes lentes (> 1 s), sans redémarrage"
   install -d -o mysql -g adm -m 2750 /var/log/mysql
@@ -151,6 +171,7 @@ nginx)
   certificate nginx
   step "server block HTTPS"
   render nginx-hostkeep.conf /etc/nginx/sites-available/hostkeep.conf "$D"
+  nginx_compat /etc/nginx/sites-available/hostkeep.conf
   if ! nginx -t; then rm -f /etc/nginx/sites-enabled/hostkeep.conf; die "nginx -t en échec : site désactivé, pas de reload."; fi
   systemctl reload-or-restart nginx && echo "Panel en ligne : https://$D" ;;
 
@@ -171,6 +192,7 @@ uninstall)
   rm -f /etc/sudoers.d/hostkeep /usr/local/sbin/hostkeep-action "/etc/php/$PHPV/fpm/pool.d/hostkeep.conf" \
         /etc/fail2ban/jail.d/hostkeep.conf /etc/fail2ban/filter.d/hostkeep.conf /etc/logrotate.d/hostkeep \
         /etc/mysql/mariadb.conf.d/90-hostkeep.cnf /etc/cron.d/hostkeep
+  # /etc/fail2ban/jail.d/00-hostkeep-journal.conf is kept: it fixes the system's own sshd jail.
   systemctl reload "php$PHPV-fpm" 2>/dev/null || true
   fail2ban-client reload >/dev/null 2>&1 || true
   echo "Le fichier /etc/apache2/conf-available/hardening.conf (protection des fichiers sensibles) est conservé."
