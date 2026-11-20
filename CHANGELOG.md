@@ -5,6 +5,11 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.2.1] — 2026-11-20
+
+### Corrigé
+- Nginx : le journal de trafic ne s'activait pas quand un autre fichier de `conf.d` (chargé après) définissait déjà le format `hostkeep_traffic`. Hostkeep utilise désormais son propre format, `hostkeep_vhost`.
+
 ## [2.2.0] — 2026-11-20
 
 ### Ajouté
