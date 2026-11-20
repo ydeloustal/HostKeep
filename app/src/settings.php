@@ -63,6 +63,7 @@ function settings_schema(): array
             'security.password_min_length' => ['int', '12', 'Longueur minimale des mots de passe', 'S\'applique aux prochains changements de mot de passe.', ['min' => 8, 'max' => 128]],
             'security.max_attempts' => ['int', '5', 'Échecs de connexion avant blocage', 'Par adresse IP et par compte.', ['min' => 3, 'max' => 50]],
             'security.lockout_minutes' => ['int', '15', 'Durée du blocage (minutes)', '', ['min' => 1, 'max' => 1440]],
+            'security.2fa_required' => ['select', 'admin', 'Double authentification obligatoire', 'Les comptes concernés qui ne l\'ont pas encore l\'activent dès leur prochaine page (QR code à scanner, puis un code). Les autres peuvent l\'activer dans Mon compte.', ['options' => ['admin' => 'Pour les Administrateurs et Super Admins (recommandé)', 'all' => 'Pour tous les comptes', 'none' => 'Pour personne (chacun choisit)']]],
             'security.password_reset' => ['bool', '1', 'Autoriser « Mot de passe oublié »', 'Nécessite un serveur SMTP configuré.', []],
             'security.ip_allowlist' => ['cidrs', '', 'Adresses IP autorisées', 'Une IP ou un réseau (CIDR) par ligne, ex. 203.0.113.10 ou 10.8.0.0/24. Vide = accès depuis partout. Ton IP actuelle doit en faire partie.', []],
         ]],

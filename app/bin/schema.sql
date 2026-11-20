@@ -125,6 +125,21 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_by VARCHAR(40) NULL
 ) ENGINE=InnoDB;
 
+-- Two-factor authentication (2.5.0): TOTP secret (encrypted with HOSTKEEP_APP_KEY), last time step accepted
+-- (a code works once), and single-use recovery codes (password_hash of each).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(255) NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled_at INT UNSIGNED NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_last_step BIGINT UNSIGNED NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS user_recovery_codes (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  code_hash VARCHAR(255) NOT NULL,
+  created_at INT UNSIGNED NOT NULL,
+  used_at INT UNSIGNED NULL,
+  KEY user_id (user_id),
+  CONSTRAINT fk_recovery_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 -- The web app connects as OS user "hostkeep" through the unix socket: no password stored anywhere.
 CREATE USER IF NOT EXISTS 'hostkeep'@'localhost' IDENTIFIED VIA unix_socket;
 GRANT SELECT ON hostkeep.* TO 'hostkeep'@'localhost';
@@ -134,4 +149,5 @@ GRANT INSERT, UPDATE, DELETE ON hostkeep.users TO 'hostkeep'@'localhost';
 GRANT INSERT, UPDATE, DELETE ON hostkeep.user_sessions TO 'hostkeep'@'localhost';
 GRANT INSERT, UPDATE, DELETE ON hostkeep.password_resets TO 'hostkeep'@'localhost';
 GRANT INSERT, UPDATE, DELETE ON hostkeep.settings TO 'hostkeep'@'localhost';
+GRANT INSERT, UPDATE, DELETE ON hostkeep.user_recovery_codes TO 'hostkeep'@'localhost';
 FLUSH PRIVILEGES;
