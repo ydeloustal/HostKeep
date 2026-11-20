@@ -329,7 +329,7 @@ const LEGACY = {
   overview: 'home', resources: 'home/history', processes: 'system/processes', services: 'system/services', pm2: 'system/pm2',
   sites: 'sites/sites', traffic: 'sites/traffic', certs: 'sites/certs', databases: 'data/databases', backups: 'data/backups',
   perf: 'system/perf', storage: 'system/storage', files: 'data/files', logs: 'data/logs', security: 'security/audit',
-  updates: 'security/updates', cron: 'system/pm2', audit: 'security/journal', panel: 'admin/panel',
+  updates: 'security/updates', cron: 'system/pm2', audit: 'security/journal', panel: 'admin/panel', notify: 'admin/settings/monitor',
 };
 
 const liveHist = [];   // last live samples, kept across page changes for the trend lines
@@ -1052,6 +1052,14 @@ function settingsBlock(gid) {
     }
     if (gid === 'smtp' && g.editable) extra.push(el('button', { class: 'btn', type: 'button', onclick: testMail }, icon('mail'), 'Envoyer un e-mail de test'));
     if (gid === 'offsite' && g.editable) extra.push(actionBtn('Tester la connexion', 'offsite-test', []));
+    if (gid === 'notifications' && g.editable) extra.push(el('button', { class: 'btn', type: 'button', onclick: testNotify }, icon('bell'), 'Tester Discord / Telegram / webhook'));
+    if (gid === 'monitor') {
+      const hb = (await section('heartbeat')).data || {};
+      top = stats(
+        stat('Dernier ping réussi', hb.enabled ? (hb.last_ok ? ago(hb.last_ok) : 'jamais') : 'désactivé', hb.enabled ? (hb.last_error ? `échec : ${hb.last_error}` : 'chaque minute') : 'renseigne une URL ci-dessous', undefined, hb.enabled && hb.last_error ? 'bad' : ''),
+        stat('Collecteur', hb.enabled ? (hb.collector_ok === false ? 'en erreur' : 'OK') : '–', hb.collector_ok === false ? 'signalé comme en échec au service' : 'au dernier passage', undefined, hb.collector_ok === false ? 'bad' : ''));
+      if (g.editable) extra.push(el('button', { class: 'btn', type: 'button', onclick: testPing }, icon('bolt'), 'Envoyer un ping de test'));
+    }
     const form = apiForm(g.fields.map(f => field(f, { editable: g.editable })), 'Enregistrer', async (values, frm) => {
       const res = await api({ r: 'settings.save', group: gid }, { body: { values } });
       cache.set('settings', Promise.resolve({ ...d, groups: res.groups }));
@@ -1063,9 +1071,21 @@ function settingsBlock(gid) {
     bindShowWhen(form);
     return [top, card(null, [g.editable ? null : el('div', { class: 'alert info' }, badge('lecture seule', 'info'), el('span', {}, 'Ton rôle permet de consulter ces paramètres, pas de les modifier.')), form]),
       gid === 'backups' ? note('Les sauvegardes elles-mêmes (liste, téléchargement, restauration) sont dans Données › Sauvegardes. La copie hors du serveur se règle dans « Sauvegarde externe ».') : null,
+      gid === 'monitor' ? note('Pourquoi ? Les alertes ci-dessus partent du serveur lui-même : s\'il est éteint ou injoignable, il ne peut prévenir personne. Ici c\'est l\'inverse : un service extérieur (Healthchecks.io gratuit, ou ton Uptime Kuma) attend un signal chaque minute et t\'alerte quand il n\'arrive plus.') : null,
       gid === 'offsite' ? note('Enregistre, puis « Tester la connexion ». Les envois suivent chaque sauvegarde ; une copie ratée est retentée toutes les heures. Sur un nouveau serveur : « sudo hostkeep restore fetch » liste les jours disponibles et en rapatrie un.') : null,
       gid === 'security' ? note('Les échecs de connexion sont aussi transmis à fail2ban (jail « hostkeep »), qui bannit l\'adresse au niveau du pare-feu.') : null];
   };
+}
+async function testNotify() {
+  try {
+    const r = await api({ r: 'settings.testnotify' }, { body: {} });
+    openModal('Test des alertes', el('ul', { class: 'plain' }, r.results.map(x => el('li', {}, badge(x.ok ? 'envoyé' : 'échec', x.ok ? 'ok' : 'crit'), ` ${x.channel}${x.error ? ` : ${x.error}` : ''}`))),
+      note('Enregistre d\'abord les réglages : le test utilise ce qui est enregistré.'));
+  } catch (e) { toast(e.message, 'crit'); }
+}
+async function testPing() {
+  try { await api({ r: 'settings.testping' }, { body: {} }); toast('Ping envoyé : le service externe l\'a bien reçu.', 'ok'); route(true); }
+  catch (e) { toast(`Ping en échec : ${e.message}`, 'crit'); }
 }
 async function testMail() {
   const to = el('input', { type: 'email', value: ME.email || '', placeholder: 'toi@example.com', 'aria-label': 'Destinataire' });
@@ -1163,7 +1183,7 @@ B.login = async () => {
 };
 
 /* Administration › Paramètres: one settings group at a time, with its own side menu. */
-const SETTINGS_ICONS = { general: 'sliders', smtp: 'mail', notifications: 'bell', backups: 'data', offsite: 'cloud', security: 'security' };
+const SETTINGS_ICONS = { general: 'sliders', smtp: 'mail', notifications: 'bell', monitor: 'bolt', backups: 'data', offsite: 'cloud', security: 'security' };
 B.settings = async sub => {
   const d = await settingsData();
   const ids = d.groups.map(g => g.id);

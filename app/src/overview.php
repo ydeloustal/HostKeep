@@ -115,6 +115,10 @@ function overview(): array
             $add('info', 'Copie externe activée : la première partira avec la prochaine sauvegarde (ou « Envoyer maintenant »).', 'backups');
         }
     }
+    $hb = snapshot('heartbeat')['data'] ?? [];
+    if (!empty($hb['enabled']) && !empty($hb['last_error'])) {
+        $add('warn', 'Le ping de surveillance externe échoue (' . mb_strimwidth($hb['last_error'], 0, 120, '…') . ') : le service externe croira le serveur en panne.', 'notify');
+    }
     foreach (snapshot('pm2')['data']['apps'] ?? [] as $a) {
         if ($a['status'] !== 'online') {
             $add('crit', "Appli PM2 {$a['name']} : {$a['status']}.", 'cron');
