@@ -21,7 +21,9 @@ if ($me['must_change_password']) {
 header('Cache-Control: no-store');
 $token = csrf_token();
 $name = panel_name();
-$nav = ['home' => 'Accueil', 'sites' => 'Sites', 'system' => 'Système', 'security' => 'Sécurité', 'data' => 'Données'];
+// Main sections, grouped in the sidebar. The phone tab bar shows the same 5 (Administration is in the account menu there).
+$groups = ['Surveillance' => ['home' => 'Accueil', 'sites' => 'Sites', 'system' => 'Système'], 'Protection' => ['security' => 'Sécurité', 'data' => 'Données']];
+$nav = array_merge(...array_values($groups));
 $admin = can($me, 'users.view') || can($me, 'settings.view');
 $initials = mb_strtoupper(mb_substr($me['display_name'] ?: $me['username'], 0, 1));
 ?><!doctype html>
@@ -43,53 +45,82 @@ $initials = mb_strtoupper(mb_substr($me['display_name'] ?: $me['username'], 0, 1
 <script type="application/json" id="me-data"><?= json_encode(me_payload($me), JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?></script>
 </head>
 <body>
-<a class="skip" id="skip" href="#home">Aller au contenu</a>
+<a class="skip" id="skip" href="#main">Aller au contenu</a>
 <div class="netbar" id="netbar" role="status" hidden>Connexion au serveur perdue. Nouvelle tentative en cours…</div>
-<header class="topbar">
-  <a class="brand" href="#home"><img src="/assets/favicon.svg" alt=""><span><strong><?= h($name) ?></strong><small>Panel d'administration</small></span></a>
-  <div class="server" aria-label="Serveur">
-    <span class="dot" aria-hidden="true"></span>
-    <span><span class="mono" id="hostname"><?= h(gethostname() ?: '') ?></span><small id="server-sub"></small></span>
-  </div>
-  <button class="search-btn" id="search-btn" type="button" aria-label="Rechercher une page ou une action" aria-keyshortcuts="Control+K">
-    <span class="ico" data-icon="search"></span><span class="lbl">Rechercher…</span><kbd aria-hidden="true">Ctrl K</kbd>
-  </button>
-  <nav class="mainnav" aria-label="Sections">
-    <?php foreach ($nav as $id => $label): ?>
-      <a href="#<?= $id ?>" data-nav="<?= $id ?>"><span class="ico" data-icon="<?= $id ?>"></span><span class="lbl"><?= h($label) ?></span><span class="count" data-count="<?= $id ?>" hidden></span></a>
+
+<!-- Desktop (≥ 1024 px): sidebar -->
+<aside class="sidebar" aria-label="Barre latérale">
+  <a class="brand" href="#home"><img src="/assets/favicon.svg" alt=""><span><strong><?= h($name) ?></strong><small>Administration serveur</small></span></a>
+  <button class="search-btn search-trigger" type="button" aria-keyshortcuts="Control+K"><span class="ico" data-icon="search"></span><span class="lbl">Rechercher…</span><kbd aria-hidden="true">Ctrl K</kbd></button>
+  <nav class="sidenav" aria-label="Navigation principale">
+    <?php foreach ($groups as $g => $items): ?>
+      <p class="nav-group"><?= h($g) ?></p>
+      <?php foreach ($items as $id => $label): ?>
+        <a href="#<?= $id ?>" data-nav="<?= $id ?>"><span class="ico" data-icon="<?= $id ?>"></span><span class="lbl"><?= h($label) ?></span><span class="count" data-count="<?= $id ?>" hidden></span></a>
+      <?php endforeach; ?>
     <?php endforeach; ?>
     <?php if ($admin): ?>
-      <a href="#admin" data-nav="admin" class="nav-extra"><span class="ico" data-icon="admin"></span><span class="lbl">Administration</span></a>
+      <p class="nav-group">Gestion</p>
+      <a href="#admin" data-nav="admin"><span class="ico" data-icon="admin"></span><span class="lbl">Administration</span></a>
     <?php endif; ?>
   </nav>
-  <div class="topbar-right">
-    <a class="health" id="health" href="#home" hidden></a>
-    <button class="icon-btn" id="refresh-btn" type="button" title="Rafraîchir" aria-label="Rafraîchir"><span class="ico" data-icon="refresh"></span><span class="lbl">Rafraîchir</span></button>
-    <button class="icon-btn more-btn" id="more-btn" type="button" aria-label="Plus d'options" aria-expanded="false" aria-controls="more-menu"><span class="ico" data-icon="more"></span></button>
-    <div class="menu" id="more-menu">
-      <a class="icon-btn account-link" href="#account" data-nav="account"><span class="avatar" aria-hidden="true"><?= h($initials) ?></span><span class="lbl"><span class="who"><?= h($me['display_name'] ?: $me['username']) ?></span><small><?= h(role_label($me['role'])) ?> · Mon compte</small></span></a>
-      <?php if ($admin): ?>
-        <a class="icon-btn menu-admin" href="#admin" data-nav="admin"><span class="ico" data-icon="admin"></span><span class="lbl">Administration</span></a>
-      <?php endif; ?>
-      <button class="icon-btn" id="install-btn" type="button" hidden><span class="ico" data-icon="install"></span><span class="lbl">Installer l'appli</span></button>
-      <button class="icon-btn" id="theme-btn" type="button"><span class="ico" data-icon="theme"></span><span class="lbl" id="theme-lbl">Thème sombre</span></button>
-      <button class="icon-btn" id="keys-btn" type="button"><span class="ico" data-icon="keyboard"></span><span class="lbl">Raccourcis clavier</span></button>
-      <form method="post" action="/logout.php" id="logout-form">
-        <input type="hidden" name="csrf" value="<?= h($token) ?>">
-        <button class="icon-btn" type="submit"><span class="ico" data-icon="logout"></span><span class="lbl">Se déconnecter</span></button>
-      </form>
-    </div>
+  <div class="side-foot">
+    <a class="server-card" href="#home" data-state="ok" title="État du serveur">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="server-text"><span class="mono" id="hostname"><?= h(gethostname() ?: '') ?></span><small class="server-state">Vérification…</small></span>
+    </a>
+    <button class="account-btn account-trigger" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="account-menu">
+      <span class="avatar" aria-hidden="true"><?= h($initials) ?></span>
+      <span class="account-text"><span class="who"><?= h($me['display_name'] ?: $me['username']) ?></span><small><?= h(role_label($me['role'])) ?></small></span>
+      <span class="ico chev" data-icon="updown"></span>
+    </button>
   </div>
+</aside>
+
+<!-- Phones and tablets: compact top bar + bottom tab bar -->
+<header class="topbar">
+  <a class="brand" href="#home"><img src="/assets/favicon.svg" alt=""><strong><?= h($name) ?></strong></a>
+  <a class="health" id="health" href="#home" hidden></a>
+  <button class="icon-btn search-trigger" type="button" aria-label="Rechercher une page ou une action"><span class="ico" data-icon="search"></span></button>
+  <button class="avatar-btn account-trigger" type="button" aria-label="Compte et réglages" aria-haspopup="true" aria-expanded="false" aria-controls="account-menu"><span class="avatar" aria-hidden="true"><?= h($initials) ?></span></button>
 </header>
+<nav class="tabbar" aria-label="Navigation principale">
+  <?php foreach ($nav as $id => $label): ?>
+    <a href="#<?= $id ?>" data-nav="<?= $id ?>"><span class="ico" data-icon="<?= $id ?>"></span><span class="lbl"><?= h($label) ?></span><span class="count" data-count="<?= $id ?>" hidden></span></a>
+  <?php endforeach; ?>
+</nav>
+
+<!-- Account menu (opened from the sidebar or the avatar) -->
+<div class="menu" id="account-menu" hidden>
+  <div class="menu-head">
+    <span class="avatar" aria-hidden="true"><?= h($initials) ?></span>
+    <span><strong><?= h($me['display_name'] ?: $me['username']) ?></strong><small><?= h(role_label($me['role'])) ?><?= $me['email'] ? ' · ' . h($me['email']) : '' ?></small></span>
+  </div>
+  <a class="menu-item" href="#account" data-nav="account"><span class="ico" data-icon="account"></span>Mon compte</a>
+  <?php if ($admin): ?><a class="menu-item only-mobile" href="#admin" data-nav="admin"><span class="ico" data-icon="admin"></span>Administration</a><?php endif; ?>
+  <hr>
+  <button class="menu-item" id="theme-btn" type="button"><span class="ico" data-icon="theme"></span><span id="theme-lbl">Thème sombre</span></button>
+  <button class="menu-item" id="keys-btn" type="button"><span class="ico" data-icon="keyboard"></span>Raccourcis clavier</button>
+  <button class="menu-item" id="install-btn" type="button" hidden><span class="ico" data-icon="install"></span>Installer l'appli</button>
+  <hr>
+  <form method="post" action="/logout.php" id="logout-form">
+    <input type="hidden" name="csrf" value="<?= h($token) ?>">
+    <button class="menu-item danger" type="submit"><span class="ico" data-icon="logout"></span>Se déconnecter</button>
+  </form>
+</div>
+
 <main class="content" id="main" tabindex="-1">
   <div class="page-head">
-    <div>
+    <div class="page-title">
       <h1 id="page-title">Accueil</h1>
       <p class="muted" id="page-desc"></p>
     </div>
-    <span class="live" id="updated" hidden></span>
+    <div class="page-tools">
+      <span class="live" id="updated" hidden></span>
+      <button class="icon-btn" id="refresh-btn" type="button" title="Rafraîchir (R)" aria-label="Rafraîchir les données"><span class="ico" data-icon="refresh"></span></button>
+    </div>
   </div>
-  <nav class="chips" id="chips" aria-label="Aller à"></nav>
+  <nav class="tabs" id="tabs" aria-label="Sections de la page" hidden></nav>
   <div id="content" class="blocks" aria-live="polite"></div>
 </main>
 <div class="modal" id="modal" hidden>

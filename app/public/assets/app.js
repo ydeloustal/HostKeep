@@ -93,6 +93,9 @@ const ICONS = {
   key: [['circle', { cx: 8, cy: 15, r: 4 }], ['path', { d: 'm10.8 12.2 9.2-9.2M17 6l3 3M14.5 8.5l2 2' }]],
   mail: [['rect', { x: 3, y: 5, width: 18, height: 14, rx: 2 }], ['path', { d: 'm3 7 9 6 9-6' }]],
   plus: [['path', { d: 'M12 5v14M5 12h14' }]],
+  updown: [['path', { d: 'm8 9 4-4 4 4M8 15l4 4 4-4' }]],
+  sliders: [['path', { d: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0' }], ['circle', { cx: 16, cy: 6, r: 2 }], ['circle', { cx: 10, cy: 12, r: 2 }], ['circle', { cx: 18, cy: 18, r: 2 }]],
+  bell: [['path', { d: 'M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9z' }], ['path', { d: 'M10 20a2 2 0 0 0 4 0' }]],
 };
 const icon = name => el('svg', { viewBox: '0 0 24 24', class: 'i', 'aria-hidden': 'true' }, (ICONS[name] || []).map(([t, a]) => el(t, a)));
 document.querySelectorAll('[data-icon]').forEach(s => s.replaceChildren(icon(s.dataset.icon)));
@@ -320,10 +323,10 @@ const SEV = { crit: ['critique', 'crit'], warn: ['à corriger', 'warn'], info: [
 
 /* Old section ids (used by alerts and old bookmarks) -> page/block. */
 const LEGACY = {
-  overview: 'home', resources: 'home/history', processes: 'home/processes', services: 'system/services', pm2: 'system/pm2',
+  overview: 'home', resources: 'home/history', processes: 'system/processes', services: 'system/services', pm2: 'system/pm2',
   sites: 'sites/sites', traffic: 'sites/traffic', certs: 'sites/certs', databases: 'data/databases', backups: 'data/backups',
   perf: 'system/perf', storage: 'system/storage', files: 'data/files', logs: 'data/logs', security: 'security/audit',
-  updates: 'security/updates', cron: 'system/pm2', audit: 'security/journal', panel: 'security/panel',
+  updates: 'security/updates', cron: 'system/pm2', audit: 'security/journal', panel: 'admin/panel',
 };
 
 const liveHist = [];   // last live samples, kept across page changes for the trend lines
@@ -1008,7 +1011,6 @@ async function changeDomain(current) {
   openModal('Changer de domaine', form);
   input.focus();
 }
-['general', 'smtp', 'notifications', 'backups', 'security'].forEach(g => { B[`s_${g}`] = settingsBlock(g); });
 
 /* ---------- Mon compte ---------- */
 B.profile = async () => {
@@ -1048,127 +1050,175 @@ B.mysessions = async () => {
   };
 };
 
-/* ---------- pages ---------- */
-const PAGES = {
-  home: { title: 'Accueil', desc: 'L\'état du serveur en un coup d\'œil.', blocks: [['summary', 'En direct'], ['history', 'Historique'], ['processes', 'Processus']] },
-  sites: { title: 'Sites', desc: 'Disponibilité, certificats HTTPS et fréquentation.', blocks: [['sites', 'Sites'], ['certs', 'Certificats'], ['traffic', 'Trafic']] },
-  system: { title: 'Système', desc: 'Services, applis, performances et disque.', blocks: [['services', 'Services'], ['pm2', 'PM2 & tâches'], ['perf', 'Performances'], ['storage', 'Stockage']] },
-  security: { title: 'Sécurité', desc: 'Audit, mises à jour, accès et historique des actions.', blocks: [['audit', 'Audit'], ['updates', 'Mises à jour'], ['panel', 'Version du panel'], ['access', 'Accès'], ['journal', 'Journal d\'actions', 'audit.view']] },
-  data: { title: 'Données', desc: 'Bases, sauvegardes, journaux et fichiers.', blocks: [['databases', 'Bases'], ['backups', 'Sauvegardes'], ['logs', 'Journaux', 'logs.view'], ['files', 'Fichiers', 'files.view']] },
-  admin: { title: 'Administration', desc: 'Comptes, rôles et paramètres du panel.', blocks: [['users', 'Utilisateurs', 'users.view'], ['roles', 'Rôles', 'users.view'],
-    ['s_general', 'Général', 'settings.view'], ['s_smtp', 'E-mails', 'settings.view'], ['s_notifications', 'Alertes', 'settings.view'], ['s_backups', 'Sauvegardes', 'settings.view'], ['s_security', 'Sécurité', 'settings.view']] },
-  account: { title: 'Mon compte', desc: 'Profil, mot de passe et sessions ouvertes.', blocks: [['profile', 'Profil'], ['password', 'Mot de passe'], ['mysessions', 'Sessions']] },
+/* Account › "Connexion" tab: password and open sessions on one screen. */
+B.login = async () => {
+  const s = await B.mysessions();
+  return [
+    el('h3', { class: 'sub-head' }, 'Changer le mot de passe'), await B.password(),
+    el('div', { class: 'sub-row' }, el('h3', { class: 'sub-head' }, 'Sessions ouvertes'), s.actions), ...s.body,
+  ];
 };
-/* Blocks the signed-in user may see (third item = permission). A page without any visible block is not reachable. */
+
+/* Administration › Paramètres: one settings group at a time, with its own side menu. */
+const SETTINGS_ICONS = { general: 'sliders', smtp: 'mail', notifications: 'bell', backups: 'data', security: 'security' };
+B.settings = async sub => {
+  const d = await settingsData();
+  const ids = d.groups.map(g => g.id);
+  let cur = ids.includes(sub) ? sub : (sessionStorage.getItem('settingsTab') || 'general');
+  if (!ids.includes(cur)) cur = ids[0];
+  sessionStorage.setItem('settingsTab', cur);
+  const nav = el('nav', { class: 'subnav', 'aria-label': 'Groupes de paramètres' }, d.groups.map(g => el('a', {
+    href: `#admin/settings/${g.id}`, 'aria-current': g.id === cur ? 'page' : null,
+  }, icon(SETTINGS_ICONS[g.id] || 'sliders'), el('span', {}, g.label), g.editable ? null : el('small', {}, 'lecture'))));
+  const body = await settingsBlock(cur)();
+  return el('div', { class: 'settings-layout' }, nav, el('div', { class: 'settings-main' }, el('h2', { class: 'settings-title' }, d.groups.find(g => g.id === cur).label), body));
+};
+
+/* ---------- pages ---------- */
+/* Each page shows one tab at a time (except the home page, a single dashboard). Third item = permission. */
+const PAGES = {
+  home: { title: 'Accueil', desc: 'L\'état du serveur en un coup d\'œil.', stacked: true, blocks: [['summary', 'En direct'], ['history', 'Historique']] },
+  sites: { title: 'Sites', desc: 'Disponibilité, certificats HTTPS et fréquentation.', blocks: [['sites', 'Sites'], ['certs', 'Certificats'], ['traffic', 'Trafic']] },
+  system: { title: 'Système', desc: 'Services, applications, ressources et disque.', blocks: [['services', 'Services'], ['pm2', 'Applis & tâches'], ['processes', 'Processus'], ['perf', 'Performances'], ['storage', 'Stockage']] },
+  security: { title: 'Sécurité', desc: 'Audit, mises à jour, accès et historique.', blocks: [['audit', 'Audit'], ['updates', 'Mises à jour'], ['access', 'Accès'], ['journal', 'Journal', 'audit.view']] },
+  data: { title: 'Données', desc: 'Bases, sauvegardes, journaux et fichiers.', blocks: [['databases', 'Bases'], ['backups', 'Sauvegardes'], ['logs', 'Journaux', 'logs.view'], ['files', 'Fichiers', 'files.view']] },
+  admin: { title: 'Administration', desc: 'Comptes, rôles, paramètres et version du panel.', blocks: [['users', 'Utilisateurs', 'users.view'], ['roles', 'Rôles', 'users.view'], ['settings', 'Paramètres', 'settings.view'], ['panel', 'Version', 'settings.view']] },
+  account: { title: 'Mon compte', desc: 'Ton profil, ton mot de passe et tes sessions.', blocks: [['profile', 'Profil'], ['login', 'Connexion & sessions']] },
+};
+/* Blocks the signed-in user may see. A page without any visible block is not reachable. */
 const blocksOf = page => PAGES[page].blocks.filter(b => !b[2] || can(b[2]));
 const pageAllowed = page => !!PAGES[page] && blocksOf(page).length > 0;
+/* Where each block lives (old links such as #security/panel or #admin/s_smtp keep working). */
+const BLOCK_PAGE = Object.fromEntries(Object.entries(PAGES).flatMap(([p, P]) => P.blocks.map(([id]) => [id, p])));
 
-const chips = document.getElementById('chips');
-let curPage = null, observer = null, renderId = 0;
+const tabsEl = document.getElementById('tabs');
+let curPage = null, curTab = null, renderId = 0, alertCounts = {};
 
 function parseHash() {
-  let h = location.hash.slice(1);
+  let h = decodeURIComponent(location.hash.slice(1));
   if (LEGACY[h] && !PAGES[h]) h = LEGACY[h];
-  const [page, anchor] = h.split('/');
-  return pageAllowed(page) ? [page, anchor] : ['home', null];
+  let [page, tab, sub] = h.split('/');
+  if (tab?.startsWith('s_')) { sub = tab.slice(2); tab = 'settings'; page = 'admin'; }
+  if (tab && PAGES[page] && !PAGES[page].blocks.some(b => b[0] === tab) && BLOCK_PAGE[tab]) page = BLOCK_PAGE[tab];
+  if (!pageAllowed(page)) return ['home', null, null];
+  const ids = blocksOf(page).map(b => b[0]);
+  if (PAGES[page].stacked) return [page, ids.includes(tab) ? tab : null, null];
+  if (!ids.includes(tab)) { const last = sessionStorage.getItem(`tab:${page}`); tab = ids.includes(last) ? last : ids[0]; }
+  return [page, tab, sub || null];
 }
-const scrollToBlock = id => document.getElementById(`b-${id}`)?.scrollIntoView({ block: 'start' });
 
-async function renderPage(page) {
+/* One block: title row (hidden when the tab already names it), actions, freshness, then the content. */
+function blockSection(id, label, { titled }) {
+  const head = el('div', { class: 'block-head' }, el('h2', { id: `h-${id}`, class: titled ? null : 'sr-only' }, label));
+  const body = el('div', { class: 'block-body' }, el('div', { class: 'skeleton' }));
+  return { sec: el('section', { class: 'block', id: `b-${id}`, 'aria-labelledby': `h-${id}` }, head, body), head, body };
+}
+async function fillBlock(b, id, sub, myId) {
+  try {
+    const out = await B[id](sub);
+    if (myId !== renderId) return;
+    const { body: nodes, actions } = out && out.body !== undefined ? out : { body: out };
+    if (actions) b.head.append(el('div', { class: 'actions' }, actions));
+    render(b.body, nodes);
+    const st = b.body.querySelector(':scope > .stale, :scope > * > .stale');
+    if (st) b.head.querySelector('h2').after(st);
+  } catch (e) {
+    if (myId === renderId) render(b.body, el('div', { class: 'error-box' }, `Erreur : ${e.message}`));
+  }
+}
+
+function drawTabs(page, tab) {
+  const P = PAGES[page];
+  if (P.stacked) { tabsEl.hidden = true; tabsEl.replaceChildren(); return; }
+  tabsEl.hidden = false;
+  tabsEl.replaceChildren(...blocksOf(page).map(([id, label]) => {
+    const k = alertCounts[`${page}/${id}`];
+    return el('a', { href: `#${page}/${id}`, 'data-tab': id, 'aria-current': id === tab ? 'page' : null },
+      label, k ? el('span', { class: `tab-count ${k.crit ? 'crit' : 'warn'}`, 'aria-label': `${k.n} alerte${k.n > 1 ? 's' : ''}` }, k.n) : null);
+  }));
+  tabsEl.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+async function renderPage(page, tab, sub) {
   const myId = ++renderId;
   clearInterval(liveTimer); liveTimer = null;
   cache = new Map();
-  observer?.disconnect();
-  const P = { ...PAGES[page], blocks: blocksOf(page) };
-  curPage = page;
+  const pageChanged = page !== curPage;
+  curPage = page; curTab = tab;
   setMenu(false);
   if (!modal.hidden) { modal.onclose = null; modal.hidden = true; }   // never leave a sheet (e.g. a one-time password) over another page
+  const P = PAGES[page];
   document.querySelectorAll('[data-nav]').forEach(a => a.toggleAttribute('aria-current', a.dataset.nav === page));
   document.getElementById('page-title').textContent = P.title;
   document.getElementById('page-desc').textContent = P.desc;
-  document.title = `${P.title} · ${ME.panel_name}`;
-  chips.replaceChildren(...P.blocks.map(([id, label]) => el('a', { href: `#${page}/${id}`, 'data-chip': id }, label)));
+  const tabLabel = !P.stacked && blocksOf(page).find(b => b[0] === tab)?.[1];
+  document.title = `${tabLabel ? `${tabLabel} · ` : ''}${P.title} · ${ME.panel_name}`;
+  drawTabs(page, tab);
+  if (!P.stacked) sessionStorage.setItem(`tab:${page}`, tab);
 
-  /* The chip of the first block in the reading zone is highlighted (and kept in view in the chip bar). */
-  const inZone = new Set();
-  observer = new IntersectionObserver(entries => {
-    for (const e of entries) { if (e.isIntersecting) inZone.add(e.target.id); else inZone.delete(e.target.id); }
-    const cur = P.blocks.map(([id]) => id).find(id => inZone.has(`b-${id}`));
-    if (!cur) return;
-    chips.querySelectorAll('[data-chip]').forEach(c => {
-      const on = c.dataset.chip === cur;
-      if (on && !c.classList.contains('on')) chips.scrollTo({ left: c.offsetLeft - 16, behavior: 'smooth' });
-      c.classList.toggle('on', on);
-      c.toggleAttribute('aria-current', on);
-    });
-  }, { rootMargin: '-120px 0px -65% 0px' });
-
-  const jobs = P.blocks.map(([id, label]) => {
-    const head = el('div', { class: 'block-head' }, el('h2', {}, label));
-    const body = el('div', { class: 'block-body' }, el('div', { class: 'skeleton' }));
-    const sec = el('section', { class: 'block', id: `b-${id}`, 'aria-labelledby': `h-${id}` }, head, body);
-    head.firstChild.id = `h-${id}`;
-    observer.observe(sec);
-    return [sec, async () => {
-      try {
-        const out = await B[id]();
-        if (myId !== renderId) return;
-        const { body: nodes, actions } = out && out.body !== undefined ? out : { body: out };
-        if (actions) head.append(el('div', { class: 'actions' }, actions));
-        render(body, nodes);
-        const st = body.querySelector(':scope > .stale, :scope > * > .stale');
-        if (st) head.firstChild.after(st);
-      } catch (e) {
-        if (myId === renderId) render(body, el('div', { class: 'error-box' }, `Erreur : ${e.message}`));
-      }
-    }];
-  });
-  render(content, jobs.map(j => j[0]));
-  await Promise.allSettled(jobs.map(j => j[1]()));
+  const list = P.stacked ? blocksOf(page) : blocksOf(page).filter(b => b[0] === tab);
+  const parts = list.map(([id, label]) => ({ id, b: blockSection(id, label, { titled: P.stacked }) }));
+  render(content, parts.map(p => p.b.sec));
+  if (pageChanged) window.scrollTo(0, 0);
+  else if (tabsEl.getBoundingClientRect().top < 0 || window.scrollY > tabsEl.offsetTop) window.scrollTo(0, Math.max(0, tabsEl.offsetTop - 70));
+  await Promise.allSettled(parts.map(p => fillBlock(p.b, p.id, sub, myId)));
   if (myId === renderId) {
     const upd = document.getElementById('updated');
-    upd.textContent = `Mis à jour à ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+    upd.textContent = `À jour · ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
     upd.hidden = false;
   }
 }
 
+let curSub = null;
 async function route(force = false) {
-  const [page, anchor] = parseHash();
-  if (force || page !== curPage) {
-    window.scrollTo(0, 0);
-    const done = renderPage(page);
-    if (anchor) { scrollToBlock(anchor); await done; scrollToBlock(anchor); }
-    await done;
-  } else if (anchor) {
-    scrollToBlock(anchor);
-  } else {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const [page, tab, sub] = parseHash();
+  if (!force && page === curPage && tab === curTab && sub === curSub) {
+    if (PAGES[page].stacked && tab) document.getElementById(`b-${tab}`)?.scrollIntoView({ block: 'start' });
+    return;
   }
+  curSub = sub;
+  await renderPage(page, tab, sub);
+  if (PAGES[page].stacked && tab) document.getElementById(`b-${tab}`)?.scrollIntoView({ block: 'start' });
 }
 
-/* Header health pill: number of alerts, refreshed every minute. */
+/* Server state (sidebar card, phone pill) and alert counters on the pages and tabs, refreshed every minute. */
 async function refreshHealth() {
   if (document.hidden) return;
   const pill = document.getElementById('health');
   try {
     const ov = await api({ r: 'overview' }, { poll: true });
     const crit = ov.alerts.filter(a => a.level === 'crit').length, warn = ov.alerts.filter(a => a.level === 'warn').length;
-    pill.className = `health ${crit ? 'crit' : warn ? 'warn' : 'ok'}`;
-    const long = crit ? `${crit} critique${crit > 1 ? 's' : ''}` : warn ? `${warn} alerte${warn > 1 ? 's' : ''}` : 'Tout va bien';
-    pill.replaceChildren(el('span', { class: 'short' }, crit || warn || 'OK'), el('span', { class: 'long' }, long));
-    pill.setAttribute('aria-label', long);
+    const state = crit ? 'crit' : warn ? 'warn' : 'ok';
+    const long = crit ? `${plural(crit, 'alerte')} critique${crit > 1 ? 's' : ''}` : warn ? `${plural(warn, 'point')} à surveiller` : 'Tout fonctionne';
+    pill.className = `health ${state}`;
+    pill.replaceChildren(el('span', {}, crit || warn || 'OK'));
+    pill.setAttribute('aria-label', `État du serveur : ${long}`);
     pill.hidden = false;
-    /* Per-section counters in the navigation (critical + warning alerts). */
-    const counts = {};
-    for (const a of ov.alerts) if (a.level !== 'info') { const p = (LEGACY[a.section] || 'home').split('/')[0]; (counts[p] ||= { n: 0, crit: false }).n++; if (a.level === 'crit') counts[p].crit = true; }
+    const card = document.querySelector('.server-card');
+    card.dataset.state = state;
+    card.querySelector('.server-state').textContent = long;
+    card.title = `${ov.host} · ${ov.os}`;
+    const pages = {};
+    alertCounts = {};
+    for (const a of ov.alerts) {
+      if (a.level === 'info') continue;
+      let target = LEGACY[a.section] || 'home';
+      const [p, b] = target.split('/');
+      const page = b && BLOCK_PAGE[b] ? BLOCK_PAGE[b] : p;
+      for (const key of [page, b ? `${page}/${b}` : null]) {
+        if (!key) continue;
+        (pages[key] ||= { n: 0, crit: false }).n++;
+        if (a.level === 'crit') pages[key].crit = true;
+      }
+    }
+    for (const [k, v] of Object.entries(pages)) if (k.includes('/')) alertCounts[k] = v;
     document.querySelectorAll('[data-count]').forEach(c => {
-      const k = counts[c.dataset.count];
+      const k = pages[c.dataset.count];
       c.hidden = !k; c.textContent = k ? k.n : '';
       c.className = `count ${k?.crit ? 'crit' : 'warn'}`;
       c.setAttribute('aria-label', k ? `${k.n} alerte${k.n > 1 ? 's' : ''}` : '');
     });
-    document.querySelector('.server')?.setAttribute('data-state', crit ? 'crit' : warn ? 'warn' : 'ok');
-    document.getElementById('server-sub').textContent = ov.os || '';
+    if (curPage) drawTabs(curPage, curTab);
   } catch (e) { /* ignore */ }
 }
 
@@ -1176,15 +1226,29 @@ window.addEventListener('hashchange', () => route());
 const refresh = () => { route(true); refreshHealth(); };
 document.getElementById('refresh-btn').onclick = refresh;
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshHealth(); });   // back on the tab: fresh status
-/* Go to a page or a block, even when the hash is already the current one. */
+/* Go to a page or a tab, even when the hash is already the current one. */
 const goTo = h => { if (location.hash === `#${h}`) route(); else location.hash = h; };
 document.getElementById('skip').onclick = e => { e.preventDefault(); document.getElementById('main').focus(); };
 
-/* "More" menu of the top bar (phones and tablets; always unfolded in the desktop sidebar). */
-const moreBtn = document.getElementById('more-btn'), menu = document.getElementById('more-menu');
-const setMenu = open => { menu.classList.toggle('open', open); moreBtn.setAttribute('aria-expanded', String(open)); };
-moreBtn.onclick = () => setMenu(!menu.classList.contains('open'));
-document.addEventListener('click', e => { if (!menu.contains(e.target) && !moreBtn.contains(e.target)) setMenu(false); });
+/* Account menu: opened from the sidebar account button (desktop) or the avatar (phones). */
+const menu = document.getElementById('account-menu');
+const triggers = [...document.querySelectorAll('.account-trigger')];
+let menuFrom = null;
+const setMenu = (open, from = null) => {
+  menu.hidden = !open;
+  triggers.forEach(t => t.setAttribute('aria-expanded', String(open && t === from)));
+  if (open) { menuFrom = from; menu.classList.toggle('from-side', !!from?.closest('.sidebar')); menu.querySelector('.menu-item')?.focus(); }
+  else menuFrom = null;
+};
+triggers.forEach(t => { t.onclick = e => { e.stopPropagation(); setMenu(menu.hidden || menuFrom !== t, t); }; });
+document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target)) setMenu(false); });
+menu.addEventListener('keydown', e => {
+  const items = [...menu.querySelectorAll('.menu-item')].filter(i => i.offsetParent !== null);
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus(); }
+  if (e.key === 'Escape') { const f = menuFrom; setMenu(false); f?.focus(); }
+  if (e.key === 'Tab') setMenu(false);
+});
 
 /* ---------- command palette (Ctrl/⌘ K or /): every page, block and routine action, by name ---------- */
 const KEYWORDS = {
@@ -1202,8 +1266,11 @@ function paletteItems() {
   for (const [p, P] of Object.entries(PAGES)) {
     if (!pageAllowed(p)) continue;
     items.push({ label: P.title, hint: 'Page', ico: p, kw: P.desc, run: () => goTo(p) });
-    for (const [id, label] of blocksOf(p)) items.push({ label: `${P.title} › ${label}`, hint: 'Section', ico: p, kw: KEYWORDS[id] || '', run: () => goTo(`${p}/${id}`) });
+    if (!PAGES[p].stacked) for (const [id, label] of blocksOf(p)) items.push({ label: `${P.title} › ${label}`, hint: 'Section', ico: p, kw: KEYWORDS[id] || '', run: () => goTo(`${p}/${id}`) });
   }
+  if (can('settings.view')) for (const [g, label] of [['general', 'Général'], ['smtp', 'E-mails (SMTP)'], ['notifications', 'Alertes par e-mail'], ['backups', 'Sauvegardes'], ['security', 'Sécurité']])
+    items.push({ label: `Paramètres › ${label}`, hint: 'Réglage', ico: SETTINGS_ICONS[g], kw: KEYWORDS[`s_${g}`] || '', run: () => goTo(`admin/settings/${g}`) });
+  items.push({ label: 'Mon compte', hint: 'Page', ico: 'account', kw: 'profil mot de passe sessions', run: () => goTo('account') });
   for (const [label, verb] of QUICK.filter(([, v]) => canVerb(v))) items.push({ label, hint: 'Action', ico: 'bolt', kw: verb, run: () => runAction(label, verb, []) });
   items.push({ label: 'Rafraîchir les données', hint: 'Action', ico: 'refresh', kw: 'recharger actualiser', run: refresh },
     { label: 'Changer de thème (clair / sombre)', hint: 'Affichage', ico: 'theme', kw: 'dark mode nuit', run: () => document.getElementById('theme-btn').click() },
@@ -1248,9 +1315,8 @@ function openPalette() {
   dlg.showModal();
   input.focus();
 }
-const searchBtn = document.getElementById('search-btn');
-searchBtn.onclick = openPalette;
-if (/Mac|iPhone|iPad/.test(navigator.platform)) searchBtn.querySelector('kbd').textContent = '⌘ K';
+document.querySelectorAll('.search-trigger').forEach(b => { b.onclick = openPalette; });
+if (/Mac|iPhone|iPad/.test(navigator.platform)) document.querySelectorAll('.search-trigger kbd').forEach(k => { k.textContent = '⌘ K'; });
 
 /* Keyboard shortcuts: Ctrl/⌘ K or / (search), 1 to 5 (pages), R (refresh), ? (this list). */
 const SHORTCUTS = [['Ctrl K  ou  /', 'Rechercher une page ou une action'], ['1 … 5', 'Accueil, Sites, Système, Sécurité, Données'], ['R', 'Rafraîchir les données'], ['Échap', 'Fermer la fenêtre ouverte'], ['?', 'Afficher cette aide']];
@@ -1258,7 +1324,6 @@ const showShortcuts = () => { setMenu(false); openModal('Raccourcis clavier', el
 document.getElementById('keys-btn').onclick = showShortcuts;
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); return; }
-  if (e.key === 'Escape') setMenu(false);
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input, select, textarea, dialog') || !modal.hidden) return;
   const pages = ['home', 'sites', 'system', 'security', 'data'];
   if (e.key === '/') { e.preventDefault(); openPalette(); }
