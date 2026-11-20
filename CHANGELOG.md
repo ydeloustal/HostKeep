@@ -5,6 +5,13 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouté
+- **Surveillance externe (« dead man's switch »)** : *Paramètres › Surveillance externe*, URL de ping Healthchecks.io, Uptime Kuma (Push) ou autre, appelée chaque minute par le collecteur, avec signal d'échec quand une tâche de collecte échoue ; bouton de test, dernier ping réussi, alerte locale si le ping échoue.
+- **Alertes sur Discord, Telegram et webhook JSON** en plus de l'e-mail (*Paramètres › Alertes*) : même message sur chaque canal, bouton « Tester Discord / Telegram / webhook » avec le résultat de chacun. Les URL et jetons sont stockés chiffrés et vérifiés à l'enregistrement.
+
+### Modifié
+- *Paramètres › Alertes par e-mail* devient *Alertes* ; l'interrupteur e-mail devient un canal parmi d'autres. Une alerte envoyée sur au moins un canal n'est pas renvoyée ; si tous échouent, nouvel essai 5 minutes plus tard.
+
 ## [2.5.0] — 2026-11-21
 
 ### Ajouté

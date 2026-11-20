@@ -68,7 +68,7 @@
 | **Système** | Services systemd, applis PM2, timers et crontabs, pools PHP-FPM, requêtes MariaDB lentes, partitions et gros dossiers | Redémarrer ou recharger un service, redémarrer une appli PM2, vider le cache apt, réduire le journal |
 | **Sécurité** | Audit des sites (`.env`, `.git`, dumps exposés, dossiers listables, en-têtes, ports, SSH), mises à jour apt, fail2ban, ports ouverts, connexions SSH, journal des actions | Lancer l'audit, installer les mises à jour, redémarrer le serveur (avec `update-grub` si besoin), débannir une IP, mettre à jour le panel |
 | **Données** | Bases MariaDB, sauvegardes quotidiennes (bases **et fichiers** : sites, configs Apache/Nginx, certificats), état de la copie externe, journaux filtrables, explorateur de fichiers en lecture seule | Sauvegarder, envoyer hors du serveur (S3, SFTP, Google Drive… via rclone), télécharger l'archive complète en un clic, restaurer une base (copie de sécurité automatique avant) |
-| **Administration** | Comptes, rôles et permissions, paramètres du panel | Créer, inviter, désactiver des comptes ; régler le SMTP, les alertes e-mail, les sauvegardes, la sécurité ; changer de domaine |
+| **Administration** | Comptes, rôles et permissions, paramètres du panel | Créer, inviter, désactiver des comptes ; régler le SMTP, les alertes (e-mail, Discord, Telegram, webhook), la surveillance externe, les sauvegardes, la sécurité ; changer de domaine |
 | **Mon compte** | Profil, sessions ouvertes sur chaque appareil | Changer de mot de passe, fermer une session à distance |
 
 ### Une interface faite pour aller vite
@@ -166,7 +166,8 @@ Les comptes se gèrent dans **Administration › Utilisateurs** (ou en ligne de 
 |---|---|
 | **Général** | Nom du panel, adresse publique (liens des e-mails), domaine et serveur web (affichage, changement de domaine) |
 | **E-mails (SMTP)** | Serveur, port, STARTTLS / TLS, identifiants (mot de passe chiffré en base), expéditeur, **e-mail de test** |
-| **Alertes** | Envoi des nouvelles alertes (critiques, ou critiques + avertissements) et de leur résolution, destinataires |
+| **Alertes** | Envoi des nouvelles alertes (critiques, ou critiques + avertissements) et de leur résolution, par **e-mail**, **Discord** (webhook), **Telegram** (bot) et **webhook JSON** générique (n8n, ntfy, Gotify…) ; bouton de test |
+| **Surveillance externe** | URL de ping **Healthchecks.io** ou **Uptime Kuma** (« Push ») appelée chaque minute : si le serveur s'éteint ou perd le réseau, c'est ce service qui te prévient. Bouton de test, état du dernier ping |
 | **Sauvegardes** | Activation, heure (appliquée au timer systemd dans la minute), fichiers inclus ou non, conservation des bases et des fichiers, exclusions |
 | **Sauvegarde externe** | Destination rclone (S3, SFTP, ou toute configuration rclone : Google Drive, Dropbox…), dossier distant, conservation à distance, **chiffrement** (rclone crypt), limite de débit, bouton **Tester la connexion** |
 | **Sécurité** | Double authentification obligatoire (admins, tous, personne), déconnexion après inactivité, longueur minimale des mots de passe, seuil et durée de blocage, « mot de passe oublié », **liste d'IP autorisées** (refusée si elle exclut ton adresse) |
@@ -212,6 +213,14 @@ La commande est idempotente : tu peux la relancer sans risque.
 Hostkeep pilote l'hôte lui-même (systemctl, apt, fail2ban, certbot, vhosts). Dans un conteneur, il faudrait le lancer en mode privilégié avec le système de fichiers de l'hôte monté, ce qui annulerait tout le modèle de sécurité (sudo limité à une liste blanche). L'installation native avec systemd est donc le mode de production recommandé.
 
 </details>
+
+## 🔔 Être prévenu, même quand le serveur est éteint
+
+Les alertes (*Paramètres › Alertes*) partent **du serveur** : e-mail, Discord, Telegram ou webhook JSON, une fois quand l'alerte apparaît, une fois quand elle se résout. Mais un serveur éteint ne prévient personne. D'où la **surveillance externe** (*Paramètres › Surveillance externe*) :
+
+1. Crée un check gratuit sur [healthchecks.io](https://healthchecks.io) (période **1 minute**, marge **5 minutes**) ou un moniteur « Push » dans ton Uptime Kuma.
+2. Colle son URL de ping dans Hostkeep, puis **Envoyer un ping de test**.
+3. Le collecteur l'appelle chaque minute. S'il échoue, il envoie un signal d'échec (Healthchecks, Kuma) ; s'il ne l'appelle plus du tout (serveur éteint, réseau coupé, collecteur bloqué), le service t'alerte par ses propres moyens (e-mail, SMS, Telegram…).
 
 ## 💾 Sauvegarder et restaurer
 
