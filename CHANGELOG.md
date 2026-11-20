@@ -5,6 +5,15 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouté
+- **Double authentification (TOTP, RFC 6238)** compatible Aegis, Google Authenticator, FreeOTP, Bitwarden, 1Password : page `/2fa.php` avec QR code (dessiné par le serveur, sans dépendance) et clé à saisir à la main, 10 codes de secours à usage unique, régénération des codes, désactivation (mot de passe + code).
+- Connexion en deux étapes : après le mot de passe, code à 6 chiffres ou code de secours (5 essais, 5 minutes, compté dans la limite de tentatives). Un code déjà utilisé est refusé.
+- Politique *Paramètres › Sécurité › Double authentification obligatoire* : pour les Administrateurs et Super Admins (par défaut), pour tous, ou pour personne. Un compte concerné sans 2FA ne peut rien faire d'autre que l'activer.
+- *Mon compte* : état de la 2FA et codes de secours restants. *Utilisateurs* : colonne « Double auth. » et réinitialisation par un compte de rang supérieur (sessions fermées). `sudo hostkeep 2fa-reset <identifiant>` en dernier recours.
+
+### Modifié
+- **À la mise à jour, les Administrateurs et Super Admins devront activer la double authentification dès leur prochaine page** (un téléphone avec une application TOTP suffit). Pour l'éviter : *Paramètres › Sécurité* › « Pour personne ».
+
 ## [2.4.0] — 2026-11-21
 
 ### Ajouté

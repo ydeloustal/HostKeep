@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /** Account management (Administration › Utilisateurs) and the user's own account page. */
 
-const USER_COLUMNS = 'id, username, email, display_name, role, active, must_change_password, locked_until, created_at, last_login_at, last_login_ip';
+const USER_COLUMNS = 'id, username, email, display_name, role, active, must_change_password, locked_until, created_at, last_login_at, last_login_ip, totp_enabled_at';
 
 function user_by_id(int $id): ?array
 {
@@ -21,6 +21,9 @@ function normalize_user(array $u): array
     $u['active'] = (bool) $u['active'];
     $u['must_change_password'] = (bool) $u['must_change_password'];
     $u['role_label'] = role_label($u['role']);
+    $u['two_fa'] = !empty($u['totp_enabled_at']);
+    $u['two_fa_required'] = two_fa_required($u['role']);
+    unset($u['totp_enabled_at']);
     return $u;
 }
 
@@ -297,7 +300,8 @@ function me_payload(array $me): array
     return ['id' => $me['id'], 'username' => $me['username'], 'display_name' => $me['display_name'] ?: $me['username'], 'email' => $me['email'],
         'role' => $me['role'], 'role_label' => role_label($me['role']), 'perms' => role_permissions($me['role']),
         'must_change_password' => $me['must_change_password'], 'panel_name' => panel_name(), 'password_min' => password_min_length(),
-        'mail' => mail_configured(), 'version' => app_version(), 'last_login_at' => $me['last_login_at'] ? (int) $me['last_login_at'] : null];
+        'mail' => mail_configured(), 'version' => app_version(), 'last_login_at' => $me['last_login_at'] ? (int) $me['last_login_at'] : null,
+        'two_fa' => two_fa_state($me['id']) + ['required' => two_fa_required($me['role'])]];
 }
 
 function roles_payload(array $me): array

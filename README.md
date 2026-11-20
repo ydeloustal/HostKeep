@@ -156,6 +156,7 @@ Les comptes se gèrent dans **Administration › Utilisateurs** (ou en ligne de 
 
 - **Création** : mot de passe temporaire généré (affiché une fois, à changer à la première connexion), invitation par e-mail (lien valable 72 h), ou mot de passe choisi.
 - **Connexion** par identifiant ou e-mail ; **mot de passe oublié** par e-mail si le SMTP est configuré.
+- **Double authentification (TOTP)** : un code à 6 chiffres d'une application (Aegis, Google Authenticator, FreeOTP, Bitwarden, 1Password…) en plus du mot de passe. **Obligatoire par défaut pour les Administrateurs et Super Admins** : à leur prochaine page, ils scannent un QR code et reçoivent 10 codes de secours à usage unique. Réglable dans *Paramètres › Sécurité* (admins, tous, personne). Téléphone et codes perdus : un compte de rang supérieur la réinitialise (*Utilisateurs › …*), ou `sudo hostkeep 2fa-reset <identifiant>`.
 - **Sessions** : chaque appareil connecté est listé et peut être déconnecté (*Mon compte*, ou par un administrateur). Changer de rôle, désactiver un compte ou changer de mot de passe ferme les autres sessions.
 - Le dernier Super Admin actif ne peut être ni supprimé, ni désactivé, ni rétrogradé.
 
@@ -168,7 +169,7 @@ Les comptes se gèrent dans **Administration › Utilisateurs** (ou en ligne de 
 | **Alertes** | Envoi des nouvelles alertes (critiques, ou critiques + avertissements) et de leur résolution, destinataires |
 | **Sauvegardes** | Activation, heure (appliquée au timer systemd dans la minute), fichiers inclus ou non, conservation des bases et des fichiers, exclusions |
 | **Sauvegarde externe** | Destination rclone (S3, SFTP, ou toute configuration rclone : Google Drive, Dropbox…), dossier distant, conservation à distance, **chiffrement** (rclone crypt), limite de débit, bouton **Tester la connexion** |
-| **Sécurité** | Déconnexion après inactivité, longueur minimale des mots de passe, seuil et durée de blocage, « mot de passe oublié », **liste d'IP autorisées** (refusée si elle exclut ton adresse) |
+| **Sécurité** | Double authentification obligatoire (admins, tous, personne), déconnexion après inactivité, longueur minimale des mots de passe, seuil et durée de blocage, « mot de passe oublié », **liste d'IP autorisées** (refusée si elle exclut ton adresse) |
 
 Les réglages du serveur lui-même (domaine, mode web, version de PHP, services affichés, dossiers de l'explorateur) sont dans `/var/www/hostkeep/.env`, documenté dans [`.env.example`](.env.example).
 
@@ -181,6 +182,7 @@ sudo hostkeep users                     # liste les comptes
 sudo hostkeep user create bob --role=editor --email=bob@exemple.fr --generate
 sudo hostkeep passwd bob [--generate]   # nouveau mot de passe (ferme ses sessions)
 sudo hostkeep unlock bob                # débloque un compte après des échecs
+sudo hostkeep 2fa-reset bob             # retire la double authentification (téléphone perdu)
 sudo hostkeep web [mode] [--domain D]   # reconfigure la publication
 sudo hostkeep update                    # git pull + réinstallation
 sudo hostkeep backup                    # sauvegarde maintenant (bases + fichiers + copie externe)
@@ -274,6 +276,7 @@ Le panel a des pouvoirs d'administration : **protège-le comme un accès SSH.**
 - Droits vérifiés côté serveur à chaque requête (RBAC), comptes de rang supérieur intouchables, journal de chaque action (connexions, comptes, paramètres, actions root).
 - Page web exécutée **sans droits root**, actions limitées à une liste blanche, arguments revalidés côté root.
 - Session expirée après 30 min d'inactivité (réglable), sessions révocables, cookie `Secure` + `HttpOnly` + `SameSite=Strict`, protection CSRF, CSP stricte, HSTS.
+- **Double authentification TOTP** obligatoire pour les comptes administrateurs (réglable), secret chiffré, un code ne sert qu'une fois, codes de secours hachés.
 - Blocage après 5 échecs par IP **et** par compte (réglable), puis bannissement fail2ban.
 - Mot de passe SMTP chiffré (AES-256-GCM), liens de réinitialisation à usage unique (seul leur hash est stocké).
 - Journal de toutes les actions. Explorateur de fichiers en lecture seule, clés privées toujours refusées.

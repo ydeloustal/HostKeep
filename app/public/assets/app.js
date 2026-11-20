@@ -131,6 +131,7 @@ async function api(params, opts = {}) {
   if (res.status === 401) { location.href = '/login.php?m=expired'; throw new Error('session expirée'); }
   const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
   if (data.must_change_password) { location.href = '/password.php'; throw new Error(data.error); }
+  if (data.must_setup_2fa) { location.href = '/2fa.php'; throw new Error(data.error); }
   if (!res.ok || data.error || data.errors) {
     const err = new Error(data.error || (data.errors ? (data.errors._ || 'Corrige les champs signalés.') : `HTTP ${res.status}`));
     err.fields = data.errors;
@@ -996,6 +997,7 @@ B.users = async () => {
             d.mail && u.email ? el('button', { class: 'linkish', onclick: () => resetUser(u, true) }, 'Envoyer un lien de réinitialisation') : null,
             el('button', { class: 'linkish', onclick: () => resetUser(u, false) }, 'Générer un mot de passe temporaire'),
             el('button', { class: 'linkish', onclick: () => userSessions(u) }, `Voir les sessions (${u.sessions})`),
+            u.two_fa ? el('button', { class: 'linkish', onclick: () => resetTwoFa(u) }, 'Réinitialiser la double authentification') : null,
             el('button', { class: 'linkish danger', onclick: async () => {
               if (!await confirmDialog(`Supprimer définitivement le compte ${u.username} ? Ses actions restent dans le journal.`, { ok: 'Supprimer', danger: true })) return;
               try { await api({ r: 'users.delete', id: u.id }, { body: {} }); toast(`Compte ${u.username} supprimé.`, 'ok'); route(true); } catch (e) { toast(e.message, 'crit'); }
@@ -1005,6 +1007,7 @@ B.users = async () => {
       el('div', { class: 'user-cell' }, avatar(u), el('div', {}, el('strong', {}, u.display_name || u.username), u.self ? el('span', { class: 'muted small' }, ' (toi)') : null,
         el('div', { class: 'muted small' }, `@${u.username}${u.email ? ` · ${u.email}` : ''}`))),
       roleBadge(u.role, u.role_label), userState(u),
+      u.two_fa ? badge('2FA', 'ok') : u.two_fa_required ? badge('à activer', 'warn') : el('span', { class: 'muted small' }, 'non'),
       el('span', { class: 'small', title: u.last_login_ip || '' }, u.last_login_at ? ago(u.last_login_at) : 'jamais'),
       u.sessions ? badge(`${u.sessions} en ligne`, 'ok') : el('span', { class: 'muted small' }, '–'),
       acts.length ? acts : el('span', { class: 'muted small' }, 'rôle supérieur ou égal'),
@@ -1014,7 +1017,7 @@ B.users = async () => {
     actions: can('users.manage') ? el('button', { class: 'btn primary small', onclick: () => userDialog(d) }, icon('plus'), 'Nouvel utilisateur') : null,
     body: [
       stats(...d.roles.list.map(r => stat(r.label, String(counts[r.id] || 0), r.id === 'superadmin' ? 'tous les droits' : plural(r.perms.length, 'permission')))),
-      card(null, table(['Utilisateur', 'Rôle', 'État', 'Dernière connexion', 'Sessions', ''], rows)),
+      card(null, table(['Utilisateur', 'Rôle', 'État', 'Double auth.', 'Dernière connexion', 'Sessions', ''], rows)),
       note(ME.role === 'superadmin' ? 'Le dernier Super Admin actif ne peut être ni supprimé, ni désactivé, ni rétrogradé.'
         : 'Tu gères les comptes de rang inférieur au tien (Éditeur / Modérateur et Lecteur). Les changements de rôle ferment les sessions du compte.'),
     ],
@@ -1112,8 +1115,24 @@ B.profile = async () => {
     card(null, [el('div', { class: 'user-cell big' }, avatar(me), el('div', {}, el('strong', {}, me.display_name), el('div', { class: 'muted' }, `@${me.username}`), roleBadge(me.role, me.role_label))),
       el('dl', { class: 'facts' }, el('dt', {}, 'Dernière connexion'), el('dd', {}, me.last_login_at ? fmtDate(me.last_login_at) : '–'),
         el('dt', {}, 'Permissions'), el('dd', {}, `${me.perms.length} — voir Administration › Rôles`))]),
-    card(null, form));
+    card(null, form), twoFaCard(me.two_fa || {}));
 };
+/* Mon compte: state of the 2FA; set up and management happen on /2fa.php (QR code drawn by the server). */
+function twoFaCard(t) {
+  const st = t.enabled
+    ? [badge('activée', 'ok'), ` depuis le ${fmtDate(t.since).split(' ')[0]} · ${plural(t.codes_left, 'code')} de secours restant${t.codes_left > 1 ? 's' : ''}`]
+    : [badge('désactivée', t.required ? 'crit' : 'warn'), t.required ? ' · exigée pour ton rôle' : ' · recommandée'];
+  return card('Double authentification', [
+    el('p', {}, st),
+    t.enabled && t.codes_left <= 3 ? el('div', { class: 'alert warn' }, badge('attention', 'warn'), el('span', {}, 'Il te reste peu de codes de secours : génères-en de nouveaux.')) : null,
+    note('Un code à 6 chiffres donné par une application (Aegis, Google Authenticator, Bitwarden…) en plus du mot de passe à chaque connexion.'),
+    el('div', { class: 'form-actions' }, el('a', { class: `btn ${t.enabled ? '' : 'primary'}`, href: '/2fa.php' }, t.enabled ? 'Gérer (codes de secours, désactivation)' : 'Activer la double authentification')),
+  ]);
+}
+async function resetTwoFa(u) {
+  if (!await confirmDialog(`Réinitialiser la double authentification de ${u.username} ? Ses sessions sont fermées${u.two_fa_required ? ', et le compte devra la réactiver (QR code) à sa prochaine connexion' : ''}. À faire quand le téléphone et les codes de secours sont perdus.`, { ok: 'Réinitialiser', danger: true })) return;
+  try { await api({ r: 'users.2fa_reset', id: u.id }, { body: {} }); toast(`Double authentification de ${u.username} réinitialisée.`, 'ok'); route(true); } catch (e) { toast(e.message, 'crit'); }
+}
 B.password = async () => card(null, apiForm([
   field({ key: 'current', type: 'password', label: 'Mot de passe actuel', autocomplete: 'current-password' }),
   field({ key: 'password', type: 'password', label: 'Nouveau mot de passe', autocomplete: 'new-password', help: `${ME.password_min} caractères minimum. Une phrase de plusieurs mots est plus simple à retenir.` }),
