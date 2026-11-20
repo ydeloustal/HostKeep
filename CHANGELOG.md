@@ -5,6 +5,14 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.1.0] — 2026-11-20
+
+### Modifié
+- Navigation repensée : barre latérale groupée (Surveillance, Protection, Gestion), état du serveur dans une carte, menu compte unique (Mon compte, thème, raccourcis, déconnexion).
+- Chaque page s'affiche en onglets (une vue à la fois) au lieu d'empiler toutes ses sections ; les onglets portent le nombre d'alertes et se souviennent du dernier choix.
+- Mobile : barre du haut réduite à l'essentiel (logo, état, recherche, avatar), 5 onglets en bas.
+- Paramètres regroupés dans un seul onglet avec un sous-menu ; « Version du panel » passe dans Administration, « Processus » dans Système.
+
 ## [2.0.1] — 2026-11-20
 
 ### Corrigé
