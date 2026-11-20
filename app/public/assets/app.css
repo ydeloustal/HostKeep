@@ -576,3 +576,6 @@ input[type=checkbox], input[type=radio] { width: 20px; height: 20px; min-height:
 .block-head:has(> h2.sr-only) .stale::before { display: none; }
 /* pages without tabs (home): space between the title and the first block */
 .tabs[hidden] + .blocks { margin-top: 24px; }
+details.alert.untracked { display: block; border-top: 0; }
+details.alert.untracked summary { cursor: pointer; }
+details.alert.untracked pre { margin: 6px 0; }
