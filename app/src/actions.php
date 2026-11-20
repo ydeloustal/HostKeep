@@ -21,6 +21,7 @@ const ACTIONS = [
     'apt-upgrade'    => [],
     'self-update'    => [],
     'self-rollback'  => [],
+    'web-domain'     => ['(?=.{4,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}'],
 ];
 
 const BACKUP_DIR = '/var/backups/hostkeep';
@@ -151,8 +152,7 @@ function start_action(string $verb, array $args): array
     if ($r['rc'] !== 0 || !preg_match('/^\d+-\d+$/', $id)) {
         return ['error' => trim($r['err']) ?: 'Le lancement a échoué.'];
     }
-    db()->prepare('INSERT INTO audit_log (ts, ip, user, action, job) VALUES (?, ?, ?, ?, ?)')
-        ->execute([time(), client_ip(), (string) $_SESSION['user'], trim($verb . ' ' . implode(' ', $args)), $id]);
+    audit(trim($verb . ' ' . implode(' ', $args)), $id);
     return ['job' => $id];
 }
 

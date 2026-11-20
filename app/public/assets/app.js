@@ -3,6 +3,17 @@
 
 const CSRF = document.querySelector('meta[name="csrf"]').content;
 const content = document.getElementById('content');
+/* Signed-in user, role and permissions (embedded by index.php). The server checks every request again. */
+const ME = JSON.parse(document.getElementById('me-data').textContent);
+const can = perm => ME.perms.includes(perm);
+/* Root actions -> permission (mirror of ACTION_PERMS in app/src/rbac.php). */
+const VERB_PERMS = {
+  'collect-now': 'actions.routine', 'security-scan': 'actions.routine', 'apt-update': 'actions.routine', 'backup-now': 'actions.routine', 'certbot:dry-run': 'actions.routine',
+  service: 'actions.services', 'pm2-restart': 'actions.services', 'f2b-unban': 'actions.services',
+  site: 'actions.system', 'certbot:renew': 'actions.system', 'apt-clean': 'actions.system', 'journal-vacuum': 'actions.system', 'apt-upgrade': 'actions.system', 'backup-restore': 'actions.system',
+  'self-update': 'panel.update', 'self-rollback': 'panel.update', 'web-domain': 'panel.update',
+};
+const canVerb = (verb, args = []) => can(VERB_PERMS[`${verb}:${args[0] ?? ''}`] || VERB_PERMS[verb] || 'none');
 
 /* ---------- helpers ---------- */
 const SVG_TAGS = ['svg', 'path', 'line', 'text', 'g', 'rect', 'circle', 'polyline', 'ellipse'];
@@ -76,6 +87,12 @@ const ICONS = {
   bolt: [['path', { d: 'M13 2 4 14h7l-1 8 9-12h-7z' }]],
   keyboard: [['rect', { x: 2, y: 6, width: 20, height: 12, rx: 2 }], ['path', { d: 'M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10' }]],
   inbox: [['path', { d: 'M3 13h5l1.5 3h5L16 13h5' }], ['path', { d: 'M5.5 5h13L21 13v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5z' }]],
+  admin: [['path', { d: 'M4 21v-1a6 6 0 0 1 9-5.2' }], ['circle', { cx: 10, cy: 8, r: 4 }], ['circle', { cx: 18, cy: 17, r: 2.5 }], ['path', { d: 'M18 12.5v2M18 19.5v2M13.5 17h2M20.5 17h2' }]],
+  user: [['circle', { cx: 12, cy: 8, r: 4 }], ['path', { d: 'M4 21a8 8 0 0 1 16 0' }]],
+  account: [['circle', { cx: 12, cy: 8, r: 4 }], ['path', { d: 'M4 21a8 8 0 0 1 16 0' }]],
+  key: [['circle', { cx: 8, cy: 15, r: 4 }], ['path', { d: 'm10.8 12.2 9.2-9.2M17 6l3 3M14.5 8.5l2 2' }]],
+  mail: [['rect', { x: 3, y: 5, width: 18, height: 14, rx: 2 }], ['path', { d: 'm3 7 9 6 9-6' }]],
+  plus: [['path', { d: 'M12 5v14M5 12h14' }]],
 };
 const icon = name => el('svg', { viewBox: '0 0 24 24', class: 'i', 'aria-hidden': 'true' }, (ICONS[name] || []).map(([t, a]) => el(t, a)));
 document.querySelectorAll('[data-icon]').forEach(s => s.replaceChildren(icon(s.dataset.icon)));
@@ -107,9 +124,14 @@ async function api(params, opts = {}) {
     });
   } catch (e) { setOffline(true); throw new Error('serveur injoignable'); }
   setOffline(false);
-  if (res.status === 401) { location.href = '/login.php'; throw new Error('session expirée'); }
+  if (res.status === 401) { location.href = '/login.php?m=expired'; throw new Error('session expirée'); }
   const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-  if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+  if (data.must_change_password) { location.href = '/password.php'; throw new Error(data.error); }
+  if (!res.ok || data.error || data.errors) {
+    const err = new Error(data.error || (data.errors ? (data.errors._ || 'Corrige les champs signalés.') : `HTTP ${res.status}`));
+    err.fields = data.errors;
+    throw err;
+  }
   return data;
 }
 /* Several blocks of one page share a section snapshot: fetch it once per page render. */
@@ -210,6 +232,7 @@ function confirmDialog(message, { ok = 'Confirmer', danger = false } = {}) {
 }
 
 function actionBtn(label, verb, args, { confirm: msg, cls = '' } = {}) {
+  if (!canVerb(verb, args)) return null;
   return el('button', {
     class: `btn small ${cls}`, onclick: async () => {
       if (msg && !await confirmDialog(msg, { ok: label.replace(/ \(\d+\)$/, ''), danger: cls.includes('danger') })) return;
@@ -218,6 +241,7 @@ function actionBtn(label, verb, args, { confirm: msg, cls = '' } = {}) {
   }, label);
 }
 async function runAction(label, verb, args) {
+  if (!canVerb(verb, args)) { toast('Ton rôle ne permet pas cette action.', 'crit'); return; }
   const status = el('p', {}, badge('en cours…', 'info'));
   const out = el('pre', { class: 'log' }, 'Lancement…');
   const name = label.replace(/ \(\d+\)$/, '');
@@ -343,7 +367,7 @@ B.summary = async () => {
     el('span', { class: 'hero-ico' }, icon(state === 'ok' ? 'check' : 'alert')),
     el('div', { class: 'hero-text', role: 'status' }, el('strong', {}, title), upSince),
     el('div', { class: 'hero-actions', role: 'group', 'aria-label': 'Actions rapides' },
-      QUICK.map(([label, verb]) => el('button', { class: 'btn', onclick: () => runAction(label, verb, []) }, label))));
+      QUICK.filter(([, verb]) => canVerb(verb)).map(([label, verb]) => el('button', { class: 'btn', onclick: () => runAction(label, verb, []) }, label))));
   return [hero, box, el('h3', { class: 'sub-head' }, all.length ? `À traiter (${all.length})` : 'Alertes'), list];
 };
 
@@ -482,7 +506,7 @@ B.services = async () => {
   const failed = s.data?.failed || [];
   const rows = (s.data?.units || []).map(u => {
     const ok = u.ActiveState === 'active';
-    const acts = u.action ? [
+    const acts = u.action && canVerb('service') ? [
       actionBtn('Redémarrer', 'service', ['restart', u.action], { confirm: `Redémarrer ${u.action} ? Le service sera coupé quelques secondes.` }),
       u.reload ? actionBtn('Recharger', 'service', ['reload', u.action]) : null,
     ] : el('span', { class: 'muted small' }, 'lecture seule');
@@ -650,13 +674,13 @@ B.databases = async () => {
 B.backups = async () => {
   const s = await section('backups');
   const d = s.data || {};
-  const dl = (day, db) => el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', day, db })}` }, 'Télécharger');
+  const dl = (day, db) => can('backups.download') ? el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', day, db })}` }, 'Télécharger') : null;
   const last = d.days?.[0]?.day;
   return {
     actions: actionBtn('Sauvegarder maintenant', 'backup-now', []),
     body: [
       stats(
-        stat('Dernière', last ? new Date(`${last}T12:00:00`).toLocaleDateString('fr-FR') : 'aucune', 'chaque nuit à 3 h 10', undefined, !last ? 'bad' : ''),
+        stat('Dernière', last ? new Date(`${last}T12:00:00`).toLocaleDateString('fr-FR') : 'aucune', d.enabled === false ? 'automatique désactivée' : `chaque nuit à ${(d.time || '03:10').replace(':', ' h ')}`, undefined, !last || d.enabled === false ? 'bad' : ''),
         stat('Espace', fmtBytes(d.total), `${d.days?.length ?? 0} jour(s) / ${d.keep ?? 7} max`),
         stat('Emplacement', 'Ce serveur', d.dir || '/var/backups/hostkeep')),
       card(null, (d.days || []).length ? d.days.map(day => el('details', { open: day === d.days[0] ? true : null },
@@ -665,7 +689,7 @@ B.backups = async () => {
           [dl(day.day, f.db), f.db === 'mysql' ? null : actionBtn('Restaurer', 'backup-restore', [day.day, f.db], { cls: 'danger', confirm: `Remplacer le contenu actuel de la base ${f.db} par la sauvegarde du ${day.day} ?\n\nUne copie de l'état actuel est faite juste avant, tu pourras revenir en arrière.` })]]))))
         : emptyState('Aucune sauvegarde pour l\'instant.')),
       (d.pre || []).length ? card('Copies avant restauration', table(['Fichier', { label: 'Taille', num: true }, 'Date', ''], d.pre.map(p => [el('span', { class: 'mono' }, p.file), fmtBytes(p.size), fmtDate(p.mtime),
-        el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', pre: p.file })}` }, 'Télécharger')]))) : null,
+        can('backups.download') ? el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', pre: p.file })}` }, 'Télécharger') : null]))) : null,
       note('Les sauvegardes restent sur ce serveur : télécharge de temps en temps celles qui comptent. La base « mysql » ne se restaure pas d\'ici.'),
     ],
   };
@@ -737,14 +761,307 @@ B.files = async () => {
   return card(null, [crumbs, list, note('Lecture seule. Les clés privées ne sont jamais lisibles.')]);
 };
 
+/* ---------- forms (settings, accounts) ---------- */
+let fieldSeq = 0;
+/* One labelled input. f: { key, type, label, help, value, options, min, max, placeholder, set } */
+function field(f, { editable = true } = {}) {
+  const id = `f${++fieldSeq}`, v = f.value ?? '';
+  const help = f.help ? el('p', { class: 'help', id: `${id}-h` }, f.help) : null;
+  const err = el('p', { class: 'field-error', role: 'alert', hidden: true });
+  const common = { id, name: f.key, disabled: !editable, 'aria-describedby': f.help ? `${id}-h` : null, required: f.required || null };
+  if (f.type === 'bool') {
+    return el('div', { class: 'field check' }, el('label', { for: id }, el('input', { ...common, type: 'checkbox', checked: v === '1' || v === true }), el('span', {}, f.label)), help, err);
+  }
+  let input;
+  if (f.type === 'select') input = el('select', common, Object.entries(f.options).map(([k, l]) => el('option', { value: k, selected: String(k) === String(v) }, l)));
+  else if (f.type === 'cidrs') input = el('textarea', { ...common, rows: 3, spellcheck: 'false', placeholder: '203.0.113.10\n10.8.0.0/24' }, v);
+  else {
+    const type = { int: 'number', time: 'time', email: 'email', password: 'password' }[f.type] || 'text';
+    input = el('input', {
+      ...common, type, value: f.type === 'password' ? '' : v, min: f.min, max: f.max, maxlength: f.type === 'text' ? f.max : null,
+      placeholder: f.type === 'password' && f.set ? '•••••••• (enregistré)' : f.placeholder, autocomplete: f.autocomplete || (f.type === 'password' ? 'new-password' : 'off'),
+      spellcheck: 'false', inputmode: f.type === 'int' ? 'numeric' : null,
+    });
+  }
+  return el('div', { class: 'field' }, el('label', { for: id }, f.label), input, help, err);
+}
+function formValues(form) {
+  const out = {};
+  for (const e of form.elements) if (e.name && !e.disabled) out[e.name] = e.type === 'checkbox' ? (e.checked ? '1' : '0') : e.type === 'radio' ? (e.checked ? e.value : out[e.name]) : e.value;
+  return out;
+}
+/* Shows the server's per-field messages next to the fields (others as a toast). */
+function showErrors(form, errors) {
+  form.querySelectorAll('.field-error').forEach(p => { p.hidden = true; });
+  let first = null;
+  for (const [k, msg] of Object.entries(errors || {})) {
+    const input = form.querySelector(`[name="${CSS.escape(k)}"]`);
+    const p = input?.closest('.field')?.querySelector('.field-error');
+    if (p) { p.textContent = msg; p.hidden = false; first ??= input; } else toast(msg, 'crit');
+  }
+  first?.focus();
+}
+/* Form whose submit calls fn(values); the button shows progress, errors go next to the fields. */
+function apiForm(fields, submitLabel, fn, { extra = null, editable = true } = {}) {
+  const btn = el('button', { class: 'btn primary', type: 'submit', hidden: !editable }, submitLabel);
+  const form = el('form', { class: 'form', novalidate: true }, fields, el('div', { class: 'form-actions' }, extra, btn));
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = 'Enregistrement…';
+    try { await fn(formValues(form), form); showErrors(form, {}); } catch (err) { if (err.fields) showErrors(form, err.fields); else toast(err.message, 'crit'); }
+    finally { btn.disabled = false; btn.textContent = label; }
+  });
+  return form;
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast('Copié dans le presse-papiers.', 'ok'); } catch (e) { toast('Copie impossible : sélectionne le texte à la main.', 'crit'); }
+}
+/* A secret shown once (temporary password). */
+function secretBox(value) {
+  return el('div', { class: 'secret' }, el('code', { class: 'mono' }, value), el('button', { class: 'btn small', type: 'button', onclick: () => copyText(value) }, 'Copier'));
+}
+const roleBadge = (role, label) => badge(label, { superadmin: 'crit', admin: 'warn', editor: 'info', viewer: '' }[role]);
+const avatar = u => el('span', { class: 'avatar', 'aria-hidden': 'true' }, (u.display_name || u.username).slice(0, 1).toUpperCase());
+
+/* ---------- Administration › Utilisateurs ---------- */
+function userState(u) {
+  if (!u.active) return badge('désactivé', 'crit');
+  if (u.locked_until && u.locked_until > Date.now() / 1000) return badge('verrouillé', 'warn');
+  if (u.must_change_password) return badge('mot de passe à changer', 'info');
+  return badge('actif', 'ok');
+}
+function userDialog(d, u = null) {
+  const roles = d.roles.list.filter(r => d.roles.assignable.includes(r.id));
+  const fields = [
+    field({ key: 'username', label: 'Identifiant', value: u?.username, max: 40, required: true, help: '3 à 40 caractères : lettres, chiffres, _ . -' }),
+    field({ key: 'display_name', label: 'Nom affiché', value: u?.display_name, max: 80 }),
+    field({ key: 'email', type: 'email', label: 'E-mail', value: u?.email || '', help: 'Pour « mot de passe oublié », les invitations et les alertes.' }),
+    field({ key: 'role', type: 'select', label: 'Rôle', value: u?.role || 'viewer', options: Object.fromEntries(roles.map(r => [r.id, r.label])) }),
+    el('p', { class: 'help role-help' }),
+  ];
+  const roleSel = fields[3].querySelector('select'), roleHelp = fields[4];
+  const syncRole = () => { roleHelp.textContent = d.roles.list.find(r => r.id === roleSel.value)?.desc || ''; };
+  roleSel.addEventListener('change', syncRole); syncRole();
+  if (u) {
+    fields.push(field({ key: 'active', type: 'bool', label: 'Compte actif', value: u.active, help: 'Désactiver ferme toutes ses sessions.' }),
+      field({ key: 'must_change_password', type: 'bool', label: 'Imposer un nouveau mot de passe à la prochaine connexion', value: u.must_change_password }));
+  } else {
+    const modes = [['generate', 'Générer un mot de passe temporaire', 'Affiché une seule fois ; à changer à la première connexion.'],
+      ['invite', 'Envoyer une invitation par e-mail', d.mail ? 'Lien valable 72 h pour choisir le mot de passe.' : 'Indisponible : aucun serveur SMTP configuré.'],
+      ['set', 'Choisir le mot de passe maintenant', `${ME.password_min} caractères minimum.`]];
+    const pw = field({ key: 'password', type: 'password', label: 'Mot de passe', autocomplete: 'new-password' });
+    pw.hidden = true;
+    const radios = el('fieldset', { class: 'field radios' }, el('legend', {}, 'Mot de passe'),
+      modes.map(([v, l, h], i) => el('label', {}, el('input', { type: 'radio', name: 'password_mode', value: v, checked: i === 0, disabled: v === 'invite' && !d.mail }), el('span', {}, l, el('small', { class: 'help' }, h)))),
+      el('p', { class: 'field-error', role: 'alert', hidden: true }));
+    radios.addEventListener('change', () => { pw.hidden = radios.querySelector('input:checked').value !== 'set'; });
+    fields.push(radios, pw);
+  }
+  const form = apiForm(fields, u ? 'Enregistrer' : 'Créer le compte', async values => {
+    if (u) {
+      await api({ r: 'users.update', id: u.id }, { body: values });
+      closeModal(); toast(`Compte ${values.username} enregistré.`, 'ok'); route(true);
+      return;
+    }
+    const res = await api({ r: 'users.create' }, { body: values });
+    if (res.password) {
+      modal.onclose = () => route(true);
+      openModal(`Compte ${res.user.username} créé`, el('p', {}, 'Transmets ce mot de passe temporaire par un canal sûr. Il ne sera plus jamais affiché ; il devra être changé à la première connexion.'), secretBox(res.password));
+    } else { closeModal(); toast(res.invited ? `Invitation envoyée à ${res.user.email}.` : `Compte ${res.user.username} créé.`, 'ok'); route(true); }
+  }, { extra: el('button', { class: 'btn', type: 'button', onclick: closeModal }, 'Annuler') });
+  openModal(u ? `Modifier ${u.username}` : 'Nouvel utilisateur', form);
+  form.querySelector('input:not([type=hidden])')?.focus();
+}
+async function userSessions(u) {
+  const box = el('div', { class: 'stack' }, el('div', { class: 'skeleton' }));
+  openModal(`Sessions de ${u.username}`, box);
+  const draw = async () => {
+    const list = await api({ r: 'users.sessions', id: u.id });
+    render(box, sessionTable(list, async id => { await api({ r: 'users.revoke', id: u.id }, { body: { session: id } }); draw(); route(true); }),
+      list.length ? el('div', { class: 'form-actions' }, el('button', { class: 'btn danger', onclick: async () => { const r = await api({ r: 'users.revoke', id: u.id }, { body: {} }); toast(`${r.revoked} session(s) fermée(s).`, 'ok'); draw(); route(true); } }, 'Tout déconnecter')) : null);
+  };
+  draw().catch(e => render(box, el('div', { class: 'error-box' }, e.message)));
+}
+function sessionTable(list, revoke) {
+  return table(['Appareil', 'Adresse IP', 'Ouverte', 'Dernière activité', ''], list.map(s => [
+    el('div', {}, el('strong', {}, s.agent), s.current ? el('div', {}, badge('cette session', 'ok')) : null),
+    el('span', { class: 'mono' }, s.ip), fmtDate(s.created_at), ago(s.last_seen),
+    s.current ? '' : el('button', { class: 'btn small danger', onclick: () => revoke(s.id) }, 'Fermer'),
+  ]), 'Aucune session ouverte.');
+}
+async function resetUser(u, mail) {
+  const viaMail = mail && u.email;
+  if (!await confirmDialog(viaMail ? `Envoyer à ${u.email} un lien pour choisir un nouveau mot de passe ? Le mot de passe actuel reste valable jusque-là.`
+    : `Remplacer le mot de passe de ${u.username} par un mot de passe temporaire ? Ses sessions seront fermées.`, { ok: viaMail ? 'Envoyer le lien' : 'Réinitialiser', danger: !viaMail })) return;
+  try {
+    const r = await api({ r: 'users.reset', id: u.id }, { body: { mode: viaMail ? 'email' : 'generate' } });
+    if (r.password) { modal.onclose = () => route(true); openModal(`Nouveau mot de passe de ${u.username}`, el('p', {}, 'Mot de passe temporaire, affiché une seule fois. Il devra être changé à la prochaine connexion.'), secretBox(r.password)); }
+    else toast(`Lien envoyé à ${u.email}.`, 'ok');
+  } catch (e) { toast(e.message, 'crit'); }
+}
+B.users = async () => {
+  const d = await api({ r: 'users' });
+  const counts = d.users.reduce((a, u) => { a[u.role] = (a[u.role] || 0) + 1; return a; }, {});
+  const rows = d.users.map(u => {
+    const acts = [];
+    if (u.manageable) {
+      acts.push(el('button', { class: 'btn small', onclick: () => userDialog(d, u) }, 'Modifier'),
+        el('details', { class: 'menu-more' }, el('summary', { class: 'btn small', 'aria-label': `Autres actions pour ${u.username}` }, '…'),
+          el('div', { class: 'more-pop' },
+            d.mail && u.email ? el('button', { class: 'linkish', onclick: () => resetUser(u, true) }, 'Envoyer un lien de réinitialisation') : null,
+            el('button', { class: 'linkish', onclick: () => resetUser(u, false) }, 'Générer un mot de passe temporaire'),
+            el('button', { class: 'linkish', onclick: () => userSessions(u) }, `Voir les sessions (${u.sessions})`),
+            el('button', { class: 'linkish danger', onclick: async () => {
+              if (!await confirmDialog(`Supprimer définitivement le compte ${u.username} ? Ses actions restent dans le journal.`, { ok: 'Supprimer', danger: true })) return;
+              try { await api({ r: 'users.delete', id: u.id }, { body: {} }); toast(`Compte ${u.username} supprimé.`, 'ok'); route(true); } catch (e) { toast(e.message, 'crit'); }
+            } }, 'Supprimer le compte'))));
+    } else if (u.self) acts.push(el('a', { class: 'btn small', href: '#account' }, 'Mon compte'));
+    return [
+      el('div', { class: 'user-cell' }, avatar(u), el('div', {}, el('strong', {}, u.display_name || u.username), u.self ? el('span', { class: 'muted small' }, ' (toi)') : null,
+        el('div', { class: 'muted small' }, `@${u.username}${u.email ? ` · ${u.email}` : ''}`))),
+      roleBadge(u.role, u.role_label), userState(u),
+      el('span', { class: 'small', title: u.last_login_ip || '' }, u.last_login_at ? ago(u.last_login_at) : 'jamais'),
+      u.sessions ? badge(`${u.sessions} en ligne`, 'ok') : el('span', { class: 'muted small' }, '–'),
+      acts.length ? acts : el('span', { class: 'muted small' }, 'rôle supérieur ou égal'),
+    ];
+  });
+  return {
+    actions: can('users.manage') ? el('button', { class: 'btn primary small', onclick: () => userDialog(d) }, icon('plus'), 'Nouvel utilisateur') : null,
+    body: [
+      stats(...d.roles.list.map(r => stat(r.label, String(counts[r.id] || 0), r.id === 'superadmin' ? 'tous les droits' : plural(r.perms.length, 'permission')))),
+      card(null, table(['Utilisateur', 'Rôle', 'État', 'Dernière connexion', 'Sessions', ''], rows)),
+      note(ME.role === 'superadmin' ? 'Le dernier Super Admin actif ne peut être ni supprimé, ni désactivé, ni rétrogradé.'
+        : 'Tu gères les comptes de rang inférieur au tien (Éditeur / Modérateur et Lecteur). Les changements de rôle ferment les sessions du compte.'),
+    ],
+  };
+};
+
+B.roles = async () => {
+  const d = await api({ r: 'users' });
+  const R = d.roles.list;
+  return [
+    el('div', { class: 'role-cards' }, R.map(r => el('div', { class: `role-card${r.id === ME.role ? ' mine' : ''}` }, el('div', {}, roleBadge(r.id, r.label), r.id === ME.role ? el('span', { class: 'muted small' }, ' ton rôle') : null), el('p', { class: 'small' }, r.desc)))),
+    card('Permissions par rôle', table(['Permission', ...R.map(r => ({ label: r.label }))],
+      d.roles.permissions.map(p => [p.label, ...R.map(r => r.perms.includes(p.id) ? el('span', { class: 'yes', 'aria-label': 'oui' }, icon('check')) : el('span', { class: 'no', 'aria-label': 'non' }, '–'))]))),
+    note('Rôles prédéfinis : chaque rôle a tous les droits des rôles en dessous. Les droits sont vérifiés par le serveur à chaque requête.'),
+  ];
+};
+
+/* ---------- Administration › Paramètres ---------- */
+const settingsData = () => { if (!cache.has('settings')) cache.set('settings', api({ r: 'settings' })); return cache.get('settings'); };
+const WEB_LABELS = { apache: 'Apache', nginx: 'Nginx', caddy: 'Caddy', proxy: 'Reverse proxy (Traefik…)', none: 'Aucun' };
+function settingsBlock(gid) {
+  return async () => {
+    const d = await settingsData();
+    const g = d.groups.find(x => x.id === gid);
+    if (!g) return emptyState('Section indisponible pour ton rôle.');
+    const extra = [];
+    let top = null;
+    if (gid === 'general') {
+      top = stats(stat('Domaine', d.domain || 'aucun', d.https ? 'HTTPS' : 'HTTP seul (non chiffré)', undefined, d.https ? '' : 'warn-stat'),
+        stat('Serveur web', WEB_LABELS[d.webserver] || d.webserver, 'détecté à l\'installation'), stat('Version', d.version, 'Sécurité › Version du panel'));
+      if (d.can_domain) extra.push(el('button', { class: 'btn', type: 'button', onclick: () => changeDomain(d.domain) }, 'Changer de domaine…'));
+    }
+    if (gid === 'smtp' && g.editable) extra.push(el('button', { class: 'btn', type: 'button', onclick: testMail }, icon('mail'), 'Envoyer un e-mail de test'));
+    const form = apiForm(g.fields.map(f => field(f, { editable: g.editable })), 'Enregistrer', async (values, frm) => {
+      const res = await api({ r: 'settings.save', group: gid }, { body: { values } });
+      cache.set('settings', Promise.resolve({ ...d, groups: res.groups }));
+      frm.querySelectorAll('input[type=password]').forEach(i => { i.value = ''; });
+      toast(`${g.label} : enregistré.`, 'ok');
+      if (gid === 'general') ME.panel_name = values['general.panel_name'];
+    }, { extra, editable: g.editable });
+    return [top, card(null, [g.editable ? null : el('div', { class: 'alert info' }, badge('lecture seule', 'info'), el('span', {}, 'Ton rôle permet de consulter ces paramètres, pas de les modifier.')), form]),
+      gid === 'backups' ? note('Les sauvegardes elles-mêmes (liste, téléchargement, restauration) sont dans Données › Sauvegardes.') : null,
+      gid === 'security' ? note('Les échecs de connexion sont aussi transmis à fail2ban (jail « hostkeep »), qui bannit l\'adresse au niveau du pare-feu.') : null];
+  };
+}
+async function testMail() {
+  const to = el('input', { type: 'email', value: ME.email || '', placeholder: 'toi@example.com', 'aria-label': 'Destinataire' });
+  const out = el('p', { class: 'muted small' }, 'Enregistre d\'abord les paramètres SMTP.');
+  const send = el('button', { class: 'btn primary', type: 'submit' }, 'Envoyer');
+  const form = el('form', { class: 'form' }, el('div', { class: 'field' }, el('label', {}, 'Destinataire'), to), out, el('div', { class: 'form-actions' }, send));
+  form.onsubmit = async e => {
+    e.preventDefault(); send.disabled = true; out.textContent = 'Envoi en cours…';
+    try { const r = await api({ r: 'settings.testmail' }, { body: { to: to.value } }); out.replaceChildren(badge('envoyé', 'ok'), ` E-mail de test envoyé à ${r.to}.`); }
+    catch (err) { out.replaceChildren(badge('échec', 'crit'), ` ${err.message}`); }
+    finally { send.disabled = false; }
+  };
+  openModal('E-mail de test', form);
+}
+async function changeDomain(current) {
+  const input = el('input', { value: current || '', placeholder: 'admin.example.com', spellcheck: 'false', autocapitalize: 'none', 'aria-label': 'Nouveau domaine' });
+  const err = el('p', { class: 'field-error', hidden: true });
+  const form = el('form', { class: 'form' },
+    el('p', {}, 'Le serveur web est reconfiguré pour le nouveau domaine et un certificat Let\'s Encrypt est demandé. Avant de valider, l\'enregistrement DNS A/AAAA du nouveau domaine doit pointer vers ce serveur.'),
+    el('div', { class: 'field' }, el('label', {}, 'Nouveau domaine'), input, err),
+    el('div', { class: 'form-actions' }, el('button', { class: 'btn', type: 'button', onclick: closeModal }, 'Annuler'), el('button', { class: 'btn primary', type: 'submit' }, 'Appliquer')));
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const v = input.value.trim().toLowerCase();
+    if (!/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(v)) { err.textContent = 'Nom de domaine invalide.'; err.hidden = false; return; }
+    if (v === current) { closeModal(); return; }
+    closeModal();
+    if (await confirmDialog(`Passer le panel sur ${v} ? L'adresse actuelle (${current}) cessera de répondre une fois l'opération réussie.`, { ok: 'Changer de domaine' })) runAction('Changer de domaine', 'web-domain', [v]);
+  };
+  openModal('Changer de domaine', form);
+  input.focus();
+}
+['general', 'smtp', 'notifications', 'backups', 'security'].forEach(g => { B[`s_${g}`] = settingsBlock(g); });
+
+/* ---------- Mon compte ---------- */
+B.profile = async () => {
+  const me = await api({ r: 'me' });
+  const form = apiForm([
+    field({ key: 'display_name', label: 'Nom affiché', value: me.display_name, max: 80 }),
+    field({ key: 'email', type: 'email', label: 'E-mail', value: me.email || '', help: 'Pour recevoir les liens « mot de passe oublié » et, si tu es administrateur, les alertes.' }),
+  ], 'Enregistrer', async values => {
+    const res = await api({ r: 'account.profile' }, { body: values });
+    Object.assign(ME, { display_name: res.user.display_name || ME.username, email: res.user.email });
+    document.querySelector('.account-link .who').textContent = ME.display_name;
+    toast('Profil enregistré.', 'ok');
+  });
+  return el('div', { class: 'grid2' },
+    card(null, [el('div', { class: 'user-cell big' }, avatar(me), el('div', {}, el('strong', {}, me.display_name), el('div', { class: 'muted' }, `@${me.username}`), roleBadge(me.role, me.role_label))),
+      el('dl', { class: 'facts' }, el('dt', {}, 'Dernière connexion'), el('dd', {}, me.last_login_at ? fmtDate(me.last_login_at) : '–'),
+        el('dt', {}, 'Permissions'), el('dd', {}, `${me.perms.length} — voir Administration › Rôles`))]),
+    card(null, form));
+};
+B.password = async () => card(null, apiForm([
+  field({ key: 'current', type: 'password', label: 'Mot de passe actuel', autocomplete: 'current-password' }),
+  field({ key: 'password', type: 'password', label: 'Nouveau mot de passe', autocomplete: 'new-password', help: `${ME.password_min} caractères minimum. Une phrase de plusieurs mots est plus simple à retenir.` }),
+  field({ key: 'confirm', type: 'password', label: 'Confirmation', autocomplete: 'new-password' }),
+], 'Changer le mot de passe', async (values, form) => {
+  if (values.password !== values.confirm) { const e = new Error('Les deux saisies diffèrent.'); e.fields = { confirm: 'Les deux saisies diffèrent.' }; throw e; }
+  await api({ r: 'account.password' }, { body: values });
+  form.reset();
+  toast('Mot de passe changé. Tes autres sessions ont été fermées.', 'ok');
+}));
+B.mysessions = async () => {
+  const list = await api({ r: 'account.sessions' });
+  const others = list.filter(s => !s.current).length;
+  return {
+    actions: others ? el('button', { class: 'btn small danger', onclick: async () => { const r = await api({ r: 'account.revoke' }, { body: {} }); toast(`${r.revoked} session(s) fermée(s).`, 'ok'); route(true); } }, 'Fermer les autres sessions') : null,
+    body: [card(null, sessionTable(list, async id => { await api({ r: 'account.revoke' }, { body: { id } }); toast('Session fermée.', 'ok'); route(true); })),
+      note('Une session se ferme seule après la durée d\'inactivité fixée dans les paramètres de sécurité.')],
+  };
+};
+
 /* ---------- pages ---------- */
 const PAGES = {
   home: { title: 'Accueil', desc: 'L\'état du serveur en un coup d\'œil.', blocks: [['summary', 'En direct'], ['history', 'Historique'], ['processes', 'Processus']] },
   sites: { title: 'Sites', desc: 'Disponibilité, certificats HTTPS et fréquentation.', blocks: [['sites', 'Sites'], ['certs', 'Certificats'], ['traffic', 'Trafic']] },
   system: { title: 'Système', desc: 'Services, applis, performances et disque.', blocks: [['services', 'Services'], ['pm2', 'PM2 & tâches'], ['perf', 'Performances'], ['storage', 'Stockage']] },
-  security: { title: 'Sécurité', desc: 'Audit, mises à jour, accès et historique des actions.', blocks: [['audit', 'Audit'], ['updates', 'Mises à jour'], ['panel', 'Version du panel'], ['access', 'Accès'], ['journal', 'Journal d\'actions']] },
-  data: { title: 'Données', desc: 'Bases, sauvegardes, journaux et fichiers.', blocks: [['databases', 'Bases'], ['backups', 'Sauvegardes'], ['logs', 'Journaux'], ['files', 'Fichiers']] },
+  security: { title: 'Sécurité', desc: 'Audit, mises à jour, accès et historique des actions.', blocks: [['audit', 'Audit'], ['updates', 'Mises à jour'], ['panel', 'Version du panel'], ['access', 'Accès'], ['journal', 'Journal d\'actions', 'audit.view']] },
+  data: { title: 'Données', desc: 'Bases, sauvegardes, journaux et fichiers.', blocks: [['databases', 'Bases'], ['backups', 'Sauvegardes'], ['logs', 'Journaux', 'logs.view'], ['files', 'Fichiers', 'files.view']] },
+  admin: { title: 'Administration', desc: 'Comptes, rôles et paramètres du panel.', blocks: [['users', 'Utilisateurs', 'users.view'], ['roles', 'Rôles', 'users.view'],
+    ['s_general', 'Général', 'settings.view'], ['s_smtp', 'E-mails', 'settings.view'], ['s_notifications', 'Alertes', 'settings.view'], ['s_backups', 'Sauvegardes', 'settings.view'], ['s_security', 'Sécurité', 'settings.view']] },
+  account: { title: 'Mon compte', desc: 'Profil, mot de passe et sessions ouvertes.', blocks: [['profile', 'Profil'], ['password', 'Mot de passe'], ['mysessions', 'Sessions']] },
 };
+/* Blocks the signed-in user may see (third item = permission). A page without any visible block is not reachable. */
+const blocksOf = page => PAGES[page].blocks.filter(b => !b[2] || can(b[2]));
+const pageAllowed = page => !!PAGES[page] && blocksOf(page).length > 0;
 
 const chips = document.getElementById('chips');
 let curPage = null, observer = null, renderId = 0;
@@ -753,7 +1070,7 @@ function parseHash() {
   let h = location.hash.slice(1);
   if (LEGACY[h] && !PAGES[h]) h = LEGACY[h];
   const [page, anchor] = h.split('/');
-  return PAGES[page] ? [page, anchor] : ['home', null];
+  return pageAllowed(page) ? [page, anchor] : ['home', null];
 }
 const scrollToBlock = id => document.getElementById(`b-${id}`)?.scrollIntoView({ block: 'start' });
 
@@ -762,12 +1079,14 @@ async function renderPage(page) {
   clearInterval(liveTimer); liveTimer = null;
   cache = new Map();
   observer?.disconnect();
-  const P = PAGES[page];
+  const P = { ...PAGES[page], blocks: blocksOf(page) };
   curPage = page;
+  setMenu(false);
+  if (!modal.hidden) { modal.onclose = null; modal.hidden = true; }   // never leave a sheet (e.g. a one-time password) over another page
   document.querySelectorAll('[data-nav]').forEach(a => a.toggleAttribute('aria-current', a.dataset.nav === page));
   document.getElementById('page-title').textContent = P.title;
   document.getElementById('page-desc').textContent = P.desc;
-  document.title = `${P.title} · Hostkeep`;
+  document.title = `${P.title} · ${ME.panel_name}`;
   chips.replaceChildren(...P.blocks.map(([id, label]) => el('a', { href: `#${page}/${id}`, 'data-chip': id }, label)));
 
   /* The chip of the first block in the reading zone is highlighted (and kept in view in the chip bar). */
@@ -874,14 +1193,18 @@ const KEYWORDS = {
   perf: 'php-fpm mariadb lent requetes', storage: 'disque espace partitions nettoyer', audit: 'scan failles env git', updates: 'apt paquets upgrade',
   panel: 'hostkeep version git', access: 'fail2ban ssh ports ip bannies', journal: 'historique actions', databases: 'mysql mariadb sql',
   backups: 'dump restaurer telecharger', logs: 'log erreurs', files: 'explorateur dossiers',
+  users: 'comptes utilisateurs creer inviter', roles: 'permissions droits rbac', s_general: 'parametres nom domaine', s_smtp: 'mail email smtp',
+  s_notifications: 'alertes email notifications', s_backups: 'sauvegarde heure conservation', s_security: 'session mot de passe ip blocage',
+  profile: 'profil nom email', password: 'mot de passe changer', mysessions: 'sessions deconnecter appareils',
 };
 function paletteItems() {
   const items = [];
   for (const [p, P] of Object.entries(PAGES)) {
+    if (!pageAllowed(p)) continue;
     items.push({ label: P.title, hint: 'Page', ico: p, kw: P.desc, run: () => goTo(p) });
-    for (const [id, label] of P.blocks) items.push({ label: `${P.title} › ${label}`, hint: 'Section', ico: p, kw: KEYWORDS[id] || '', run: () => goTo(`${p}/${id}`) });
+    for (const [id, label] of blocksOf(p)) items.push({ label: `${P.title} › ${label}`, hint: 'Section', ico: p, kw: KEYWORDS[id] || '', run: () => goTo(`${p}/${id}`) });
   }
-  for (const [label, verb] of QUICK) items.push({ label, hint: 'Action', ico: 'bolt', kw: verb, run: () => runAction(label, verb, []) });
+  for (const [label, verb] of QUICK.filter(([, v]) => canVerb(v))) items.push({ label, hint: 'Action', ico: 'bolt', kw: verb, run: () => runAction(label, verb, []) });
   items.push({ label: 'Rafraîchir les données', hint: 'Action', ico: 'refresh', kw: 'recharger actualiser', run: refresh },
     { label: 'Changer de thème (clair / sombre)', hint: 'Affichage', ico: 'theme', kw: 'dark mode nuit', run: () => document.getElementById('theme-btn').click() },
     { label: 'Se déconnecter', hint: 'Session', ico: 'logout', kw: 'logout quitter', run: () => document.getElementById('logout-form').requestSubmit() });
@@ -937,7 +1260,7 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openPalette(); return; }
   if (e.key === 'Escape') setMenu(false);
   if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest?.('input, select, textarea, dialog') || !modal.hidden) return;
-  const pages = Object.keys(PAGES);
+  const pages = ['home', 'sites', 'system', 'security', 'data'];
   if (e.key === '/') { e.preventDefault(); openPalette(); }
   else if (pages[Number(e.key) - 1]) goTo(pages[Number(e.key) - 1]);
   else if (e.key.toLowerCase() === 'r') refresh();

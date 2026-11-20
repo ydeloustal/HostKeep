@@ -3,15 +3,27 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/bootstrap.php';
 require __DIR__ . '/../src/auth.php';
+require __DIR__ . '/../src/mailer.php';
+require __DIR__ . '/../src/users.php';
 
 security_headers();
+enforce_ip_allowlist();
 start_session();
-if (!is_logged()) {
-    header('Location: /login.php');
+$me = current_user();
+if (!$me) {
+    header('Location: /login.php' . (isset($_COOKIE['hksid']) ? '?m=expired' : ''));
     exit;
 }
+if ($me['must_change_password']) {
+    header('Location: /password.php');
+    exit;
+}
+header('Cache-Control: no-store');
 $token = csrf_token();
+$name = panel_name();
 $nav = ['home' => 'Accueil', 'sites' => 'Sites', 'system' => 'Système', 'security' => 'Sécurité', 'data' => 'Données'];
+$admin = can($me, 'users.view') || can($me, 'settings.view');
+$initials = mb_strtoupper(mb_substr($me['display_name'] ?: $me['username'], 0, 1));
 ?><!doctype html>
 <html lang="fr">
 <head>
@@ -19,21 +31,22 @@ $nav = ['home' => 'Accueil', 'sites' => 'Sites', 'system' => 'Système', 'securi
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="csrf" content="<?= h($token) ?>">
-<title>Hostkeep</title>
+<title><?= h($name) ?></title>
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="/assets/manifest.json">
 <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#131720" media="(prefers-color-scheme: dark)">
-<meta name="apple-mobile-web-app-title" content="Hostkeep">
+<meta name="apple-mobile-web-app-title" content="<?= h($name) ?>">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="stylesheet" href="/assets/app.css">
+<script type="application/json" id="me-data"><?= json_encode(me_payload($me), JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?></script>
 </head>
 <body>
 <a class="skip" id="skip" href="#home">Aller au contenu</a>
 <div class="netbar" id="netbar" role="status" hidden>Connexion au serveur perdue. Nouvelle tentative en cours…</div>
 <header class="topbar">
-  <a class="brand" href="#home"><img src="/assets/favicon.svg" alt=""><span><strong>Hostkeep</strong><small>Panel d'administration</small></span></a>
+  <a class="brand" href="#home"><img src="/assets/favicon.svg" alt=""><span><strong><?= h($name) ?></strong><small>Panel d'administration</small></span></a>
   <div class="server" aria-label="Serveur">
     <span class="dot" aria-hidden="true"></span>
     <span><span class="mono" id="hostname"><?= h(gethostname() ?: '') ?></span><small id="server-sub"></small></span>
@@ -45,12 +58,19 @@ $nav = ['home' => 'Accueil', 'sites' => 'Sites', 'system' => 'Système', 'securi
     <?php foreach ($nav as $id => $label): ?>
       <a href="#<?= $id ?>" data-nav="<?= $id ?>"><span class="ico" data-icon="<?= $id ?>"></span><span class="lbl"><?= h($label) ?></span><span class="count" data-count="<?= $id ?>" hidden></span></a>
     <?php endforeach; ?>
+    <?php if ($admin): ?>
+      <a href="#admin" data-nav="admin" class="nav-extra"><span class="ico" data-icon="admin"></span><span class="lbl">Administration</span></a>
+    <?php endif; ?>
   </nav>
   <div class="topbar-right">
     <a class="health" id="health" href="#home" hidden></a>
     <button class="icon-btn" id="refresh-btn" type="button" title="Rafraîchir" aria-label="Rafraîchir"><span class="ico" data-icon="refresh"></span><span class="lbl">Rafraîchir</span></button>
     <button class="icon-btn more-btn" id="more-btn" type="button" aria-label="Plus d'options" aria-expanded="false" aria-controls="more-menu"><span class="ico" data-icon="more"></span></button>
     <div class="menu" id="more-menu">
+      <a class="icon-btn account-link" href="#account" data-nav="account"><span class="avatar" aria-hidden="true"><?= h($initials) ?></span><span class="lbl"><span class="who"><?= h($me['display_name'] ?: $me['username']) ?></span><small><?= h(role_label($me['role'])) ?> · Mon compte</small></span></a>
+      <?php if ($admin): ?>
+        <a class="icon-btn menu-admin" href="#admin" data-nav="admin"><span class="ico" data-icon="admin"></span><span class="lbl">Administration</span></a>
+      <?php endif; ?>
       <button class="icon-btn" id="install-btn" type="button" hidden><span class="ico" data-icon="install"></span><span class="lbl">Installer l'appli</span></button>
       <button class="icon-btn" id="theme-btn" type="button"><span class="ico" data-icon="theme"></span><span class="lbl" id="theme-lbl">Thème sombre</span></button>
       <button class="icon-btn" id="keys-btn" type="button"><span class="ico" data-icon="keyboard"></span><span class="lbl">Raccourcis clavier</span></button>
