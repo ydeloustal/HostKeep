@@ -312,7 +312,8 @@ function lineChart(points, series, { yFmt = v => v, yMax = null, height = 170 } 
   svg.addEventListener('pointermove', point);
   svg.addEventListener('pointerdown', point);   // touch: a tap shows the value, it stays until the next tap
   svg.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { hover.setAttribute('visibility', 'hidden'); tip.textContent = ' '; } });
-  wrap.append(svg, series.length > 1 ? el('div', { class: 'legend' }, series.map(s => el('span', {}, el('i', { style: { background: `var(${s.color})` } }), s.name))) : null, tip);
+  const legend = series.length > 1 ? el('div', { class: 'legend' }, series.map(s => el('span', {}, el('i', { style: { background: `var(${s.color})` } }), s.name))) : null;
+  wrap.append(...[svg, legend, tip].filter(Boolean));   // append(null) would print "null"
   return wrap;
 }
 

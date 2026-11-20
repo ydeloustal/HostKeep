@@ -5,6 +5,12 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.1.1] — 2026-11-20
+
+### Corrigé
+- « null » affiché sous les graphiques à une seule courbe (CPU, Disque, Charge).
+- Accueil : titre « En direct » collé à la description de la page.
+
 ## [2.1.0] — 2026-11-20
 
 ### Modifié
