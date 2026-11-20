@@ -9,6 +9,7 @@ declare(strict_types=1);
  *   user.php passwd <identifiant> [--password-stdin|--generate]     (asks interactively by default)
  *   user.php role <identifiant> <rôle>
  *   user.php enable|disable|unlock <identifiant>
+ *   user.php 2fa-reset <identifiant>   removes the two-factor authentication (lost phone + recovery codes)
  *   user.php setup [--username=U] [--email=E] [--password-stdin|--generate]
  *        first Super Admin if none exists (interactive unless options are given)
  *   user.php migrate-env      imports the single account of Hostkeep 1.x (.env) when the table is empty
@@ -23,6 +24,7 @@ if (PHP_SAPI !== 'cli' || posix_geteuid() !== 0) {
 require __DIR__ . '/../src/bootstrap.php';
 require __DIR__ . '/../src/settings.php';
 require __DIR__ . '/../src/rbac.php';
+require __DIR__ . '/../src/totp.php';
 
 $args = array_slice($argv, 1);
 $opts = [];
@@ -151,15 +153,15 @@ function create(string $username, string $role, ?string $email, string $name, ar
 
 switch ($cmd) {
     case 'list':
-        $rows = db()->query('SELECT username, email, role, active, locked_until, last_login_at FROM users ORDER BY username')->fetchAll();
+        $rows = db()->query('SELECT username, email, role, active, locked_until, last_login_at, totp_enabled_at FROM users ORDER BY username')->fetchAll();
         if (!$rows) {
             out('Aucun compte. Crée le premier Super Admin : sudo hostkeep admin');
             break;
         }
-        out(pad('IDENTIFIANT', 20) . pad('RÔLE', 22) . pad('E-MAIL', 30) . pad('ÉTAT', 12) . 'DERNIÈRE CONNEXION');
+        out(pad('IDENTIFIANT', 20) . pad('RÔLE', 22) . pad('E-MAIL', 30) . pad('ÉTAT', 12) . pad('2FA', 6) . 'DERNIÈRE CONNEXION');
         foreach ($rows as $r) {
             $state = !$r['active'] ? 'désactivé' : ((int) $r['locked_until'] > time() ? 'verrouillé' : 'actif');
-            out(pad($r['username'], 20) . pad(role_label($r['role']), 22) . pad($r['email'] ?? '-', 30) . pad($state, 12)
+            out(pad($r['username'], 20) . pad(role_label($r['role']), 22) . pad($r['email'] ?? '-', 30) . pad($state, 12) . pad($r['totp_enabled_at'] ? 'oui' : 'non', 6)
                 . ($r['last_login_at'] ? date('Y-m-d H:i', (int) $r['last_login_at']) : 'jamais'));
         }
         break;
@@ -227,6 +229,15 @@ switch ($cmd) {
         }
         audit("compte {$u['username']} : $cmd (ligne de commande)", null, 0, 'root');
         out("« {$u['username']} » : " . ['enable' => 'réactivé', 'disable' => 'désactivé', 'unlock' => 'débloqué'][$cmd] . '.');
+        break;
+
+    case '2fa-reset':
+        $u = find((string) ($pos[0] ?? fail('identifiant manquant.')));
+        two_fa_disable((int) $u['id']);
+        db()->prepare('DELETE FROM user_sessions WHERE user_id = ?')->execute([$u['id']]);
+        audit("double authentification de {$u['username']} réinitialisée (ligne de commande)", null, 0, 'root');
+        out("Double authentification de « {$u['username']} » retirée, sessions fermées."
+            . (two_fa_required($u['role']) ? ' Son rôle l\'exige : elle lui sera redemandée (QR code) à la prochaine connexion.' : ''));
         break;
 
     case 'migrate-env':

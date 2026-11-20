@@ -7,6 +7,7 @@
 #   sudo hostkeep user create bob --role=editor --email=bob@example.com --generate
 #   sudo hostkeep passwd bob             new password (--generate for a temporary one)
 #   sudo hostkeep unlock bob             unlock an account after failed logins
+#   sudo hostkeep 2fa-reset bob          remove the two-factor authentication (lost phone and recovery codes)
 #   sudo hostkeep web [apache|nginx|caddy|proxy|none] [--domain D] [--https yes|no]
 #   sudo hostkeep update                 git pull + reinstall (same as the panel's update button)
 #   sudo hostkeep collect [mode]         run the collector now
@@ -64,7 +65,7 @@ case $cmd in
   admin) user setup "$@" ;;
   users) user list ;;
   user) user "${@:-list}" ;;
-  passwd|unlock|enable|disable|role) user "$cmd" "$@" ;;
+  passwd|unlock|enable|disable|role|2fa-reset) user "$cmd" "$@" ;;
   web) installer web "$@" ;;
   update)
     [[ -d $SRC/.git ]] || { echo "Pas de clone git dans $SRC : mise à jour impossible." >&2; exit 1; }
@@ -77,5 +78,5 @@ case $cmd in
     echo "--- /var/log/hostkeep/php-error.log"; tail -n 30 /var/log/hostkeep/php-error.log 2>/dev/null || true ;;
   uninstall) installer uninstall "$@" ;;
   version) cat "$APP/VERSION" 2>/dev/null || echo "?" ;;
-  *) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; [[ $cmd == help ]] ;;
+  *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; [[ $cmd == help ]] ;;
 esac

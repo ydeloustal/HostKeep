@@ -35,6 +35,10 @@ if (!is_array($in)) {
 if ($me['must_change_password'] && !in_array($r, ['me', 'account.password'], true)) {
     json_out(['error' => 'Change d\'abord ton mot de passe.', 'must_change_password' => true], 403);
 }
+/* Same when the role requires 2FA and the account has none yet (set up on /2fa.php). */
+if ($me['must_setup_2fa'] && $r !== 'me') {
+    json_out(['error' => 'Active d\'abord la double authentification.', 'must_setup_2fa' => true], 403);
+}
 $post = static function () use ($isPost): void {
     if (!$isPost) {
         json_out(['error' => 'POST requis'], 405);
@@ -111,6 +115,18 @@ try {
             require_perm($me, 'users.manage');
             $res = user_reset_password($uid(), (string) ($in['mode'] ?? 'generate'), $me);
             json_out($res, isset($res['error']) ? 422 : 200);
+
+        case 'users.2fa_reset':
+            $post();
+            require_perm($me, 'users.manage');
+            $t = user_by_id($uid());
+            if (!$t || !can_manage_user($me, $t) || $t['id'] === $me['id']) {
+                json_out(['error' => 'Tu ne peux pas réinitialiser la double authentification de ce compte.'], 403);
+            }
+            two_fa_disable($t['id']);
+            revoke_sessions($t['id'], null);
+            audit("double authentification réinitialisée : {$t['username']}");
+            json_out(['ok' => true]);
 
         case 'users.sessions':
             require_perm($me, 'users.manage');

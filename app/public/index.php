@@ -14,8 +14,8 @@ if (!$me) {
     header('Location: /login.php' . (isset($_COOKIE['hksid']) ? '?m=expired' : ''));
     exit;
 }
-if ($me['must_change_password']) {
-    header('Location: /password.php');
+if ($me['must_change_password'] || $me['must_setup_2fa']) {
+    header('Location: ' . ($me['must_change_password'] ? '/password.php' : '/2fa.php'));
     exit;
 }
 header('Cache-Control: no-store');

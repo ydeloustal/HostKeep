@@ -586,3 +586,17 @@ details.alert.untracked pre { margin: 6px 0; }
 /* Settings: "remove the stored value" under a secret field. */
 .clear-secret { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
 .card > .stats { margin-bottom: 0; }
+
+/* 2FA page (2fa.php) and the code field of the login */
+.login-card.wide { width: min(560px, 100%); }
+.login-card h2 { font-size: 17px; margin: 28px 0 4px; text-align: left; }
+.login-card .steps { text-align: left; padding-left: 20px; display: grid; gap: 14px; margin: 20px 0 0; }
+.login-card .steps form { margin-top: 10px; }
+.login-card .qr { display: flex; justify-content: center; margin: 12px 0 6px; }
+.login-card .qr svg { width: 220px; height: 220px; border-radius: 8px; border: 1px solid var(--border); }
+.login-card details { margin-top: 6px; }
+.secret-key { font-size: 16px; letter-spacing: .06em; word-break: break-all; user-select: all; }
+.otp-input { font-family: var(--mono); font-size: 22px; letter-spacing: .25em; text-align: center; }
+.recovery-codes { text-align: left; font: 600 16px/1.9 var(--mono); background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; columns: 2; user-select: all; }
+.inline-form { display: block; margin-top: 18px; }
+.inline-form.login-links { text-align: center; }

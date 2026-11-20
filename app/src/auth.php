@@ -8,6 +8,10 @@ declare(strict_types=1);
  */
 require_once __DIR__ . '/settings.php';
 require_once __DIR__ . '/rbac.php';
+require_once __DIR__ . '/totp.php';
+
+const TWO_FA_PENDING_TTL = 300;   // seconds to type the code after the password
+const TWO_FA_MAX_TRIES = 5;
 
 function idle_timeout(): int
 {
@@ -40,7 +44,7 @@ function current_user(bool $touch = true): ?array
         return null;
     }
     $s = db()->prepare('SELECT s.id AS sid, s.last_seen, u.id, u.username, u.email, u.display_name, u.role, u.active, u.must_change_password,
-                               u.last_login_at, u.created_at
+                               u.last_login_at, u.created_at, u.totp_enabled_at
                         FROM user_sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ?');
     $s->execute([hash('sha256', $token)]);
     $u = $s->fetch();
@@ -59,6 +63,9 @@ function current_user(bool $touch = true): ?array
     }
     $u['id'] = (int) $u['id'];
     $u['must_change_password'] = (bool) $u['must_change_password'];
+    $u['two_fa'] = $u['totp_enabled_at'] !== null;
+    // the role requires 2FA and the account has none yet: only the 2FA setup page is reachable
+    $u['must_setup_2fa'] = !$u['two_fa'] && two_fa_required($u['role']);
     return $cached = $u;
 }
 
@@ -132,13 +139,62 @@ function attempt_login(string $login, string $pass): bool|string
         return $locked ? 'Compte temporairement verrouillé après plusieurs échecs. Réessaie plus tard.'
             : (!$u || !$ok ? 'Identifiants incorrects.' : 'Ce compte est désactivé.');
     }
-    record_attempt($ip, true, $login);
     if (password_needs_rehash($u['password_hash'], PASSWORD_DEFAULT)) {
         db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([password_hash($pass, PASSWORD_DEFAULT), $u['id']]);
     }
-    db()->prepare('UPDATE users SET failed_logins = 0, locked_until = 0, last_login_at = ?, last_login_ip = ? WHERE id = ?')->execute([time(), $ip, $u['id']]);
+    if ($u['totp_enabled_at'] !== null) {
+        // Password right: no session yet, the code comes next (login.php shows the second step).
+        session_regenerate_id(true);
+        $_SESSION = ['pending_2fa' => ['uid' => (int) $u['id'], 'at' => time(), 'tries' => 0], 'csrf' => bin2hex(random_bytes(32))];
+        return 'totp';
+    }
+    record_attempt($ip, true, $login);
+    complete_login($u, 'connexion');
+    return true;
+}
+
+function complete_login(array $u, string $what): void
+{
+    db()->prepare('UPDATE users SET failed_logins = 0, locked_until = 0, last_login_at = ?, last_login_ip = ? WHERE id = ?')->execute([time(), client_ip(), $u['id']]);
     open_user_session((int) $u['id']);
-    audit('connexion', null, 0, $u['username']);
+    audit($what, null, 0, $u['username']);
+}
+
+/** The account waiting for its second factor in this browser session, or null (none, expired, too many tries). */
+function pending_2fa_user(): ?array
+{
+    $p = $_SESSION['pending_2fa'] ?? null;
+    if (!is_array($p) || time() - (int) $p['at'] > TWO_FA_PENDING_TTL || (int) $p['tries'] >= TWO_FA_MAX_TRIES) {
+        unset($_SESSION['pending_2fa']);
+        return null;
+    }
+    $s = db()->prepare('SELECT * FROM users WHERE id = ? AND active = 1 AND totp_enabled_at IS NOT NULL');
+    $s->execute([(int) $p['uid']]);
+    return $s->fetch() ?: null;
+}
+
+/** Second step of the login: 6-digit code or recovery code. @return true|string error message */
+function attempt_2fa(string $code): bool|string
+{
+    $ip = client_ip();
+    $u = pending_2fa_user();
+    if (!$u) {
+        return 'Délai dépassé : saisis de nouveau ton mot de passe.';
+    }
+    if (too_many_attempts($ip)) {
+        unset($_SESSION['pending_2fa']);
+        return 'Trop de tentatives depuis ton adresse. Réessaie dans ' . intdiv(lockout_seconds(), 60) . ' minutes.';
+    }
+    $how = two_fa_check((int) $u['id'], $code);
+    if ($how === null) {
+        $_SESSION['pending_2fa']['tries']++;
+        record_attempt($ip, false, $u['username']);
+        $left = TWO_FA_MAX_TRIES - $_SESSION['pending_2fa']['tries'];
+        return $left > 0 ? "Code incorrect ($left essai" . ($left > 1 ? 's' : '') . ' restant' . ($left > 1 ? 's' : '') . ').'
+            : 'Code incorrect. Saisis de nouveau ton mot de passe.';
+    }
+    record_attempt($ip, true, $u['username']);
+    complete_login($u, $how === 'recovery' ? 'connexion (code de secours)' : 'connexion (2FA)');
     return true;
 }
 
