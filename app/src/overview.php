@@ -15,6 +15,18 @@ function security_live(array $sec): array
         'reboot_required' => ($sec['kernel_latest'] ?? $running) !== $running, 'since_reboot' => true]);
 }
 
+/** Last local backup and state of the off-site copy (home page, alerts). */
+function backup_summary(): array
+{
+    $b = snapshot('backups')['data'] ?? [];
+    $last = $b['days'][0] ?? null;
+    $o = snapshot('offsite')['data'] ?? [];
+    return ['day' => $last['day'] ?? null, 'finished' => $last['finished'] ?? null, 'size' => $last['size'] ?? 0,
+        'errors' => $last['errors'] ?? [], 'archives' => count($last['archives'] ?? []), 'dbs' => count($last['files'] ?? []),
+        'offsite' => ['enabled' => !empty($o['enabled']), 'label' => $o['label'] ?? '', 'last_ok' => $o['last_ok'] ?? null,
+            'last_day' => $o['last_day'] ?? null, 'last_error' => $o['last_error'] ?? null]];
+}
+
 /** Server state summary and alerts: home page, header pill, and e-mail alerts (collector). */
 function overview(): array
 {
@@ -87,9 +99,21 @@ function overview(): array
             $add('crit', "Audit de sécurité : $crit problème(s) critique(s) (fichiers sensibles exposés…).", 'security');
         }
     }
-    $bk = snapshot('backups')['data']['days'][0]['day'] ?? null;
-    if ($bk === null || $bk < date('Y-m-d', time() - 2 * 86400)) {
-        $add('warn', 'Aucune sauvegarde des bases depuis plus de 2 jours.', 'backups');
+    $backup = backup_summary();
+    if ($backup['day'] === null || $backup['day'] < date('Y-m-d', time() - 2 * 86400)) {
+        $add('warn', 'Aucune sauvegarde depuis plus de 2 jours.', 'backups');
+    } elseif ($backup['errors']) {
+        $add('warn', 'Dernière sauvegarde incomplète : ' . mb_strimwidth($backup['errors'][0], 0, 160, '…'), 'backups');
+    }
+    $off = $backup['offsite'];
+    if ($off['enabled']) {
+        if ($off['last_error']) {
+            $add('warn', 'Copie externe des sauvegardes en échec : ' . mb_strimwidth($off['last_error'], 0, 160, '…'), 'backups');
+        } elseif ($off['last_ok'] && $off['last_ok'] < time() - 36 * 3600) {
+            $add('warn', 'Aucune copie externe réussie depuis ' . intdiv(time() - $off['last_ok'], 3600) . ' h.', 'backups');
+        } elseif (!$off['last_ok']) {
+            $add('info', 'Copie externe activée : la première partira avec la prochaine sauvegarde (ou « Envoyer maintenant »).', 'backups');
+        }
     }
     foreach (snapshot('pm2')['data']['apps'] ?? [] as $a) {
         if ($a['status'] !== 'online') {
@@ -103,6 +127,7 @@ function overview(): array
         'sites_up' => $up,
         'sites_total' => $total,
         'alerts' => $alerts,
+        'backup' => $backup,
         'os' => (static function (): string {
             $o = @parse_ini_file('/etc/os-release');
             return (string) ($o['PRETTY_NAME'] ?? 'Linux');

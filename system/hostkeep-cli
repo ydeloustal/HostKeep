@@ -10,6 +10,10 @@
 #   sudo hostkeep web [apache|nginx|caddy|proxy|none] [--domain D] [--https yes|no]
 #   sudo hostkeep update                 git pull + reinstall (same as the panel's update button)
 #   sudo hostkeep collect [mode]         run the collector now
+#   sudo hostkeep backup                 back up now (databases + files, then the off-site copy)
+#   sudo hostkeep restore list           backup days on this server
+#   sudo hostkeep restore fetch [day]    list the days of the off-site copy, or bring one back here
+#   sudo hostkeep restore files <day> <archive> [--in-place]   extract www, nginx… (aside by default)
 #   sudo hostkeep logs                   last lines of the panel logs
 #   sudo hostkeep uninstall [--purge]
 set -euo pipefail
@@ -20,6 +24,40 @@ SRC=$(head -n1 /var/lib/hostkeep/source 2>/dev/null || true)
 user() { php "$APP/bin/user.php" "$@"; }
 installer() { [[ -x $SRC/install.sh ]] || { echo "Dépôt source introuvable ($SRC)." >&2; exit 1; }; "$SRC/install.sh" "$@"; }
 
+BK=/var/backups/hostkeep
+restore() {
+  local what=${1:-} day=${2:-} item=${3:-} f out a
+  case $what in
+    list)
+      for d in "$BK"/????-??-??; do
+        [[ -d $d ]] || continue
+        printf '%s  %6s  bases: %s  fichiers: %s\n' "$(basename "$d")" "$(du -sh "$d" | cut -f1)" \
+          "$(find "$d" -maxdepth 1 -name '*.sql.gz' -printf '%f ' | sed 's/\.sql\.gz//g')" \
+          "$(find "$d/files" -maxdepth 1 -name '*.tar.gz' -printf '%f ' 2>/dev/null | sed 's/\.tar\.gz//g')"
+      done ;;
+    fetch)
+      php "$APP/bin/collect.php" offsite-fetch "$day" ;;
+    files)
+      f=$BK/$day/files/$item.tar.gz
+      if [[ ! $day =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ || ! $item =~ ^[a-z0-9]+$ || ! -f $f ]]; then
+        echo "Archive introuvable : $f" >&2
+        echo "Usage : hostkeep restore files <AAAA-MM-JJ> <archive> [--in-place]   (voir « hostkeep restore list »)" >&2
+        exit 1
+      fi
+      if [[ ${4:-} == --in-place ]]; then
+        echo "ATTENTION : les fichiers de l'archive « $item » du $day vont REMPLACER les fichiers actuels"
+        echo "(dossier $(tar -tzf "$f" | head -n1 | cut -d/ -f1-2)). Les fichiers ajoutés depuis ne sont pas supprimés."
+        read -r -p "Tape « restaurer » pour confirmer : " a
+        [[ $a == restaurer ]] || { echo "Annulé."; exit 1; }
+        tar -xzpf "$f" -C / && echo "Restauré. Vérifie la config puis recharge le serveur web (apache2ctl configtest / nginx -t)."
+      else
+        out=$BK/restore/$day-$item
+        mkdir -p "$out" && chmod 700 "$BK/restore"
+        tar -xzpf "$f" -C "$out" && echo "Extrait dans $out : rien n'a été remplacé. Compare et recopie ce qu'il faut, ou relance avec --in-place."
+      fi ;;
+    *) sed -n '/hostkeep restore/p' "$0" | sed 's/^# \{0,1\}//'; [[ -z $what ]] ;;
+  esac
+}
 cmd=${1:-help}; shift || true
 case $cmd in
   status) installer status ;;
@@ -32,10 +70,12 @@ case $cmd in
     [[ -d $SRC/.git ]] || { echo "Pas de clone git dans $SRC : mise à jour impossible." >&2; exit 1; }
     git -C "$SRC" pull --ff-only && installer app ;;
   collect) php "$APP/bin/collect.php" "${1:-all}" ;;
+  backup) php "$APP/bin/collect.php" backup --force ;;
+  restore) restore "$@" ;;
   logs)
     journalctl -u hostkeep -u hostkeep-http -u 'hostkeep-collect@*' -n "${1:-60}" --no-pager || true
     echo "--- /var/log/hostkeep/php-error.log"; tail -n 30 /var/log/hostkeep/php-error.log 2>/dev/null || true ;;
   uninstall) installer uninstall "$@" ;;
   version) cat "$APP/VERSION" 2>/dev/null || echo "?" ;;
-  *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; [[ $cmd == help ]] ;;
+  *) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; [[ $cmd == help ]] ;;
 esac

@@ -37,10 +37,10 @@ const PERMISSIONS = [
 /** Root actions (app/src/actions.php) => permission needed to start them. */
 const ACTION_PERMS = [
     'collect-now' => 'actions.routine', 'security-scan' => 'actions.routine', 'apt-update' => 'actions.routine',
-    'backup-now' => 'actions.routine', 'certbot:dry-run' => 'actions.routine',
+    'backup-now' => 'actions.routine', 'offsite-now' => 'actions.routine', 'certbot:dry-run' => 'actions.routine',
     'service' => 'actions.services', 'pm2-restart' => 'actions.services', 'f2b-unban' => 'actions.services',
     'site' => 'actions.system', 'certbot:renew' => 'actions.system', 'apt-clean' => 'actions.system', 'journal-vacuum' => 'actions.system',
-    'apt-upgrade' => 'actions.system', 'backup-restore' => 'actions.system', 'reboot' => 'actions.system',
+    'apt-upgrade' => 'actions.system', 'backup-restore' => 'actions.system', 'reboot' => 'actions.system', 'offsite-test' => 'actions.system',
     'self-update' => 'panel.update', 'self-rollback' => 'panel.update', 'web-domain' => 'panel.update',
 ];
 

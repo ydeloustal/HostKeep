@@ -8,13 +8,36 @@ const TRAFFIC_STATE = '/var/lib/hostkeep/traffic.json';
 const BOT_RE = '/bot|crawl|spider|slurp|curl|wget|python|go-http|httpclient|scan|nmap|zgrab|masscan|libwww|okhttp|java\/|headless|monitor|uptime|axios|node-fetch|preview|facebookexternalhit|hostkeep-/i';
 const STATIC_RE = '/\.(css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|otf|mp4|webm|mp3|webmanifest|json|txt|xml)$/i';
 
-/* ---------- database backups ---------- */
+/* ---------- backups: databases and files ---------- */
 
 function backup_keep_days(): int
 {
     return max(1, setting_int('backup.keep_days'));
 }
 
+/** Folders saved as files/<name>.tar.gz (paths relative to /), when they exist. */
+const BACKUP_SOURCES = ['www' => 'var/www', 'apache2' => 'etc/apache2', 'nginx' => 'etc/nginx', 'letsencrypt' => 'etc/letsencrypt', 'hostkeep' => 'etc/hostkeep'];
+
+function backup_files_keep_days(): int
+{
+    return min(backup_keep_days(), max(1, setting_int('backup.files_keep_days')));
+}
+
+function human_bytes(float $b): string
+{
+    foreach (['o', 'Ko', 'Mo', 'Go', 'To'] as $u) {
+        if ($b < 1024 || $u === 'To') {
+            return round($b, $u === 'o' ? 0 : 1) . " $u";
+        }
+        $b /= 1024;
+    }
+    return '';
+}
+
+/**
+ * Nightly backup (and "Sauvegarder maintenant"): one dump per database, then the files when enabled,
+ * then manifest.json (what was saved, sizes, sha256, errors). Old days are pruned afterwards.
+ */
 function c_backup(): void
 {
     global $pdo, $argv;
@@ -22,6 +45,7 @@ function c_backup(): void
         echo "Sauvegarde automatique désactivée (Administration › Paramètres › Sauvegardes).\n";
         return;
     }
+    $started = time();
     $dir = BACKUP_DIR . '/' . date('Y-m-d');
     if (!is_dir($dir)) {
         mkdir($dir, 0750, true);
@@ -30,6 +54,7 @@ function c_backup(): void
     $dbs = $pdo->query("SELECT schema_name FROM information_schema.schemata
                         WHERE schema_name NOT IN ('information_schema', 'performance_schema', 'sys')")->fetchAll(PDO::FETCH_COLUMN);
     $errors = [];
+    $items = [];
     foreach ($dbs as $db) {
         if (!preg_match('/^[A-Za-z0-9_-]{1,64}$/', $db)) {
             continue;
@@ -37,30 +62,109 @@ function c_backup(): void
         $f = "$dir/$db.sql.gz";
         $cmd = 'set -o pipefail; mysqldump --single-transaction --quick --routines --triggers --events --skip-dump-date '
             . escapeshellarg($db) . ' | gzip -6 > ' . escapeshellarg("$f.tmp");
+        $out = [];
         exec('bash -c ' . escapeshellarg($cmd) . ' 2>&1', $out, $rc);
         if ($rc === 0) {
             rename("$f.tmp", $f);
             chgrp($f, 'hostkeep');
             chmod($f, 0640);
-            echo "$db : " . round(filesize($f) / 1024) . " Ko\n";
+            $items[] = ['kind' => 'db', 'name' => $db, 'file' => "$db.sql.gz", 'size' => filesize($f), 'sha256' => hash_file('sha256', $f)];
+            echo "base $db : " . human_bytes(filesize($f)) . "\n";
         } else {
             @unlink("$f.tmp");
-            $errors[] = "$db : " . implode(' ', $out);
+            $errors[] = "base $db : " . implode(' ', $out);
         }
     }
+    if (setting_bool('backup.files_enabled')) {
+        backup_files($dir, $items, $errors);
+    }
+    $manifest = ['host' => gethostname(), 'version' => app_version(),
+        'started' => $started, 'finished' => time(), 'items' => $items, 'errors' => $errors];
+    file_put_contents("$dir/manifest.json.tmp", json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    chgrp("$dir/manifest.json.tmp", 'hostkeep');
+    chmod("$dir/manifest.json.tmp", 0640);
+    rename("$dir/manifest.json.tmp", "$dir/manifest.json");
+    backup_prune();
+    if ($errors) {
+        throw new RuntimeException(implode(' | ', $errors));
+    }
+}
+
+/** files/<name>.tar.gz for each folder of BACKUP_SOURCES (root only: they hold private keys and site secrets). */
+function backup_files(string $dir, array &$items, array &$errors): void
+{
+    $sources = array_filter(BACKUP_SOURCES, fn($p) => is_dir("/$p"));
+    if (!$sources) {
+        return;
+    }
+    $excludes = array_values(array_filter(explode("\n", setting('backup.exclude')), 'strlen'));
+    // Space check: the previous archives (or the raw size of the folders) + 10 %, and keep 1 Gio free.
+    $need = (int) (backup_files_estimate($sources, $excludes, basename($dir)) * 1.1) + 1024 ** 3;
+    $free = (int) @disk_free_space(BACKUP_DIR);
+    if ($free < $need) {
+        $errors[] = 'fichiers non sauvegardés : ' . human_bytes($free) . ' libres sur le disque, il en faut environ ' . human_bytes($need)
+            . ' (réduis la conservation des fichiers ou ajoute des exclusions)';
+        return;
+    }
+    $fdir = "$dir/files";
+    if (!is_dir($fdir)) {
+        mkdir($fdir, 0700);
+    }
+    chmod($fdir, 0700);
+    foreach ($sources as $name => $path) {
+        $f = "$fdir/$name.tar.gz";
+        $cmd = ['nice', '-n', '10', 'tar', '--create', '--gzip', '--file', "$f.tmp", '--exclude-caches', '--ignore-failed-read',
+            '--warning=no-file-changed', '--warning=no-file-removed', '--warning=no-file-shrank', '--exclude=' . ltrim(BACKUP_DIR, '/')];
+        foreach ($excludes as $e) {
+            $cmd[] = "--exclude=$e";
+        }
+        array_push($cmd, '-C', '/', $path);
+        $out = [];
+        exec(implode(' ', array_map('escapeshellarg', $cmd)) . ' 2>&1', $out, $rc);
+        if ($rc <= 1 && is_file("$f.tmp")) {   // 1 = some files changed while being read: the archive is still usable
+            chmod("$f.tmp", 0600);
+            rename("$f.tmp", $f);
+            $items[] = ['kind' => 'files', 'name' => $name, 'path' => "/$path", 'file' => "files/$name.tar.gz", 'size' => filesize($f), 'sha256' => hash_file('sha256', $f)];
+            echo "fichiers $name (/$path) : " . human_bytes(filesize($f)) . "\n";
+        } else {
+            @unlink("$f.tmp");
+            $errors[] = "fichiers $name : " . implode(' ', array_slice($out, -3));
+        }
+    }
+}
+
+/** Expected size of the file archives: the last ones made, else the raw size of the folders. */
+function backup_files_estimate(array $sources, array $excludes, string $today): int
+{
+    $days = glob(BACKUP_DIR . '/????-??-??', GLOB_ONLYDIR) ?: [];
+    rsort($days);
+    foreach ($days as $d) {
+        $sizes = array_map('filesize', glob("$d/files/*.tar.gz") ?: []);
+        if ($sizes && basename($d) !== $today) {
+            return (int) array_sum($sizes);
+        }
+    }
+    $cmd = 'du -sbc ' . implode(' ', array_map(fn($e) => escapeshellarg("--exclude=$e"), $excludes)) . ' '
+        . implode(' ', array_map(fn($p) => escapeshellarg("/$p"), $sources)) . ' 2>/dev/null | tail -n1';
+    return (int) sh($cmd);
+}
+
+/** Drops the days older than the database retention, and the file archives older than theirs. */
+function backup_prune(): void
+{
     $limit = date('Y-m-d', time() - backup_keep_days() * 86400);
+    $filesLimit = date('Y-m-d', time() - backup_files_keep_days() * 86400);
     foreach (glob(BACKUP_DIR . '/????-??-??', GLOB_ONLYDIR) ?: [] as $d) {
         if (basename($d) < $limit) {
             exec('rm -rf -- ' . escapeshellarg($d));
+        } elseif (basename($d) < $filesLimit && is_dir("$d/files")) {
+            exec('rm -rf -- ' . escapeshellarg("$d/files"));
         }
     }
     foreach (glob(BACKUP_DIR . '/pre-restore/*.sql.gz') ?: [] as $f) {
         if (filemtime($f) < time() - backup_keep_days() * 86400) {
             unlink($f);
         }
-    }
-    if ($errors) {
-        throw new RuntimeException(implode(' | ', $errors));
     }
 }
 
@@ -73,9 +177,16 @@ function c_backups(): void
         foreach (glob("$d/*.sql.gz") ?: [] as $f) {
             $files[] = ['db' => basename($f, '.sql.gz'), 'size' => filesize($f), 'mtime' => filemtime($f)];
         }
-        $size = array_sum(array_column($files, 'size'));
+        $archives = [];
+        foreach (glob("$d/files/*.tar.gz") ?: [] as $f) {
+            $name = basename($f, '.tar.gz');
+            $archives[] = ['name' => $name, 'path' => '/' . (BACKUP_SOURCES[$name] ?? $name), 'size' => filesize($f), 'mtime' => filemtime($f)];
+        }
+        $m = json_decode((string) @file_get_contents("$d/manifest.json"), true) ?: [];
+        $size = array_sum(array_column($files, 'size')) + array_sum(array_column($archives, 'size'));
         $total += $size;
-        $days[] = ['day' => basename($d), 'size' => $size, 'files' => $files];
+        $days[] = ['day' => basename($d), 'size' => $size, 'files' => $files, 'archives' => $archives,
+            'finished' => $m['finished'] ?? null, 'errors' => $m['errors'] ?? []];
     }
     usort($days, fn($a, $b) => strcmp($b['day'], $a['day']));
     $pre = [];
@@ -83,7 +194,9 @@ function c_backups(): void
         $pre[] = ['file' => basename($f), 'size' => filesize($f), 'mtime' => filemtime($f)];
         $total += filesize($f);
     }
-    save('backups', ['days' => $days, 'pre' => $pre, 'total' => $total, 'keep' => backup_keep_days(), 'enabled' => setting_bool('backup.enabled'), 'time' => setting('backup.time'), 'dir' => BACKUP_DIR]);
+    save('backups', ['days' => $days, 'pre' => $pre, 'total' => $total, 'keep' => backup_keep_days(), 'enabled' => setting_bool('backup.enabled'),
+        'files_enabled' => setting_bool('backup.files_enabled'), 'files_keep' => backup_files_keep_days(),
+        'time' => setting('backup.time'), 'dir' => BACKUP_DIR, 'free' => (int) @disk_free_space(BACKUP_DIR)]);
 }
 
 /* ---------- traffic (incremental parse of the GlobalLog) ---------- */

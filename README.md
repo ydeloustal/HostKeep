@@ -67,7 +67,7 @@
 | **Sites** | Sites Apache **et** Nginx (lus dans leur configuration), code HTTP, temps de réponse, disponibilité sur 7 j, certificats Let's Encrypt, trafic (visiteurs, robots, 404/5xx, pages, référents) | Contrôler les sites, activer ou désactiver un vhost, tester et renouveler les certificats |
 | **Système** | Services systemd, applis PM2, timers et crontabs, pools PHP-FPM, requêtes MariaDB lentes, partitions et gros dossiers | Redémarrer ou recharger un service, redémarrer une appli PM2, vider le cache apt, réduire le journal |
 | **Sécurité** | Audit des sites (`.env`, `.git`, dumps exposés, dossiers listables, en-têtes, ports, SSH), mises à jour apt, fail2ban, ports ouverts, connexions SSH, journal des actions | Lancer l'audit, installer les mises à jour, redémarrer le serveur (avec `update-grub` si besoin), débannir une IP, mettre à jour le panel |
-| **Données** | Bases MariaDB, sauvegardes quotidiennes, journaux filtrables, explorateur de fichiers en lecture seule | Sauvegarder, télécharger, restaurer une base (copie de sécurité automatique avant) |
+| **Données** | Bases MariaDB, sauvegardes quotidiennes (bases **et fichiers** : sites, configs Apache/Nginx, certificats), état de la copie externe, journaux filtrables, explorateur de fichiers en lecture seule | Sauvegarder, envoyer hors du serveur (S3, SFTP, Google Drive… via rclone), télécharger l'archive complète en un clic, restaurer une base (copie de sécurité automatique avant) |
 | **Administration** | Comptes, rôles et permissions, paramètres du panel | Créer, inviter, désactiver des comptes ; régler le SMTP, les alertes e-mail, les sauvegardes, la sécurité ; changer de domaine |
 | **Mon compte** | Profil, sessions ouvertes sur chaque appareil | Changer de mot de passe, fermer une session à distance |
 
@@ -166,7 +166,8 @@ Les comptes se gèrent dans **Administration › Utilisateurs** (ou en ligne de 
 | **Général** | Nom du panel, adresse publique (liens des e-mails), domaine et serveur web (affichage, changement de domaine) |
 | **E-mails (SMTP)** | Serveur, port, STARTTLS / TLS, identifiants (mot de passe chiffré en base), expéditeur, **e-mail de test** |
 | **Alertes** | Envoi des nouvelles alertes (critiques, ou critiques + avertissements) et de leur résolution, destinataires |
-| **Sauvegardes** | Activation, heure (appliquée au timer systemd dans la minute), durée de conservation |
+| **Sauvegardes** | Activation, heure (appliquée au timer systemd dans la minute), fichiers inclus ou non, conservation des bases et des fichiers, exclusions |
+| **Sauvegarde externe** | Destination rclone (S3, SFTP, ou toute configuration rclone : Google Drive, Dropbox…), dossier distant, conservation à distance, **chiffrement** (rclone crypt), limite de débit, bouton **Tester la connexion** |
 | **Sécurité** | Déconnexion après inactivité, longueur minimale des mots de passe, seuil et durée de blocage, « mot de passe oublié », **liste d'IP autorisées** (refusée si elle exclut ton adresse) |
 
 Les réglages du serveur lui-même (domaine, mode web, version de PHP, services affichés, dossiers de l'explorateur) sont dans `/var/www/hostkeep/.env`, documenté dans [`.env.example`](.env.example).
@@ -182,6 +183,10 @@ sudo hostkeep passwd bob [--generate]   # nouveau mot de passe (ferme ses sessio
 sudo hostkeep unlock bob                # débloque un compte après des échecs
 sudo hostkeep web [mode] [--domain D]   # reconfigure la publication
 sudo hostkeep update                    # git pull + réinstallation
+sudo hostkeep backup                    # sauvegarde maintenant (bases + fichiers + copie externe)
+sudo hostkeep restore list              # jours sauvegardés sur ce serveur
+sudo hostkeep restore fetch [jour]      # jours de la copie externe, ou en rapatrie un ici
+sudo hostkeep restore files <jour> www  # extrait une archive à part (--in-place pour remplacer)
 sudo hostkeep logs                      # journaux du service et du collecteur
 ```
 
@@ -205,6 +210,38 @@ La commande est idempotente : tu peux la relancer sans risque.
 Hostkeep pilote l'hôte lui-même (systemctl, apt, fail2ban, certbot, vhosts). Dans un conteneur, il faudrait le lancer en mode privilégié avec le système de fichiers de l'hôte monté, ce qui annulerait tout le modèle de sécurité (sudo limité à une liste blanche). L'installation native avec systemd est donc le mode de production recommandé.
 
 </details>
+
+## 💾 Sauvegarder et restaurer
+
+Chaque nuit (heure réglable), Hostkeep range dans `/var/backups/hostkeep/AAAA-MM-JJ/` :
+
+| Quoi | Fichier | Conservation par défaut |
+|---|---|---|
+| Chaque base MariaDB | `<base>.sql.gz` | 7 jours |
+| `/var/www`, `/etc/apache2`, `/etc/nginx`, `/etc/letsencrypt`, `/etc/hostkeep` | `files/<nom>.tar.gz` (lisible par root seulement) | 3 jours |
+| Ce qui a été fait, tailles, sommes SHA-256, erreurs | `manifest.json` | — |
+
+Avant d'archiver les fichiers, Hostkeep vérifie qu'il reste assez de place (et garde 1 Gio libre) : sinon il saute cette partie et lève une alerte, plutôt que de remplir le disque.
+
+**Copie hors du serveur.** Dans *Administration › Paramètres › Sauvegarde externe*, choisis une destination (S3, SFTP, ou une configuration rclone pour Google Drive, Dropbox…), une phrase de chiffrement (recommandé), puis **Tester la connexion**. Chaque jour est copié juste après la sauvegarde ; un envoi raté est retenté toutes les heures. L'accueil affiche l'heure de la dernière copie réussie, et une alerte se lève après 36 h sans copie.
+
+**Restaurer.**
+
+```bash
+# une base : depuis le panel (Données › Sauvegardes › Restaurer), avec une copie de l'état actuel juste avant
+sudo hostkeep restore list                          # ce qui est sur ce serveur
+sudo hostkeep restore files 2026-11-20 www          # extrait /var/www du 20/11 dans /var/backups/hostkeep/restore/, sans rien écraser
+sudo hostkeep restore files 2026-11-20 nginx --in-place   # remplace /etc/nginx (demande confirmation)
+```
+
+**Serveur perdu ?** Installe Hostkeep sur le nouveau serveur, remets les mêmes réglages de *Sauvegarde externe* (même phrase de chiffrement), puis :
+
+```bash
+sudo hostkeep restore fetch               # liste les jours disponibles à distance
+sudo hostkeep restore fetch 2026-11-20    # les rapatrie et vérifie les sommes de contrôle
+```
+
+> Garde la phrase de chiffrement **ailleurs que sur le serveur** : sans elle, les copies externes sont illisibles.
 
 ## 🏗️ Comment ça marche
 
