@@ -8,7 +8,7 @@ declare(strict_types=1);
 const ACTIONS = [
     'service'        => ['restart|reload', '[a-z0-9@._-]{1,64}'],   // allowed list: HOSTKEEP_SERVICES, checked by the helper
     'pm2-restart'    => ['[A-Za-z0-9._-]{1,64}'],
-    'site'           => ['enable|disable', '[A-Za-z0-9._-]{1,100}'],
+    'site'           => ['enable|disable', 'apache|nginx', '[A-Za-z0-9._-]{1,100}'],
     'certbot'        => ['dry-run|renew'],
     'apt-clean'      => [],
     'journal-vacuum' => [],
@@ -176,7 +176,7 @@ function job_status(string $id): array
 
 function read_log(string $key, int $lines): array
 {
-    if (!preg_match('/^(journal-errors|fail2ban|hostkeep-auth|apache:[A-Za-z0-9._-]+|pm2:[A-Za-z0-9._-]+)$/D', $key)) {
+    if (!preg_match('/^(journal-errors|fail2ban|hostkeep-auth|(?:apache|nginx):[A-Za-z0-9._-]+|pm2:[A-Za-z0-9._-]+)$/D', $key)) {
         return ['error' => 'journal inconnu'];
     }
     $r = run_helper(['log', $key, (string) max(10, min(2000, $lines))]);

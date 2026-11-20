@@ -424,13 +424,19 @@ async function siteHistory(host) {
   await draw();
 }
 
+const WEB_NAME = { apache: 'Apache', nginx: 'Nginx' };
+const TEST_CMD = { apache: 'configtest', nginx: 'nginx -t' };
+/* "nginx:site.conf" -> { server, conf }; Hostkeep ≤ 2.1 snapshots hold bare Apache names. */
+const splitConf = c => typeof c === 'object' ? c : c.includes(':') ? { server: c.split(':')[0], conf: c.slice(c.indexOf(':') + 1) } : { server: 'apache', conf: c };
 B.sites = async () => {
   const s = await section('sites');
   const d = s.data || {}, up = d.uptime || {}, lat = d.latency || {};
+  const both = (d.servers || []).length > 1;
   const rows = (d.sites || []).map(x => {
     const code = x.code ?? null;
     const cls = code === null ? '' : code >= 200 && code < 400 ? 'ok' : code < 500 && code > 0 ? 'warn' : 'crit';
     const certCls = x.cert_days === null || x.cert_days === undefined ? '' : x.cert_days < 15 ? 'crit' : x.cert_days < 30 ? 'warn' : 'ok';
+    const confs = (x.confs || []).map(splitConf);
     return [
       el('div', {}, el('a', { href: x.url, target: '_blank', rel: 'noopener noreferrer' }, x.name), el('div', { class: 'muted small mono' }, x.docroot || ''), x.aliases?.length ? el('div', { class: 'muted small' }, x.aliases.join(', ')) : null),
       code === null ? '–' : badge(code === 0 ? 'injoignable' : `HTTP ${code}`, cls),
@@ -439,16 +445,21 @@ B.sites = async () => {
         spark((lat[x.name] || []).filter(v => v !== null)) || el('span', { class: 'muted small' }, 'Historique')),
       up[x.name] !== undefined ? `${up[x.name]} %` : '–',
       x.cert_days !== null && x.cert_days !== undefined ? badge(`${x.cert_days} j`, certCls) : badge('HTTP seul'),
-      el('details', { class: 'more' }, el('summary', {}, 'Vhost'), el('div', { class: 'mono small' }, (x.confs || []).join(', ')),
-        (x.confs || []).filter(c => !c.startsWith(d.self)).map(c => actionBtn(`Désactiver ${c}`, 'site', ['disable', c], { cls: 'danger', confirm: `Désactiver le vhost ${c} ? Le site ne sera plus servi (configtest + reload, retour arrière si erreur).` }))),
+      el('details', { class: 'more' }, el('summary', {}, both ? `Config ${(x.server || 'apache').split('+').map(v => WEB_NAME[v] || v).join(' + ')}` : 'Config'),
+        el('div', { class: 'mono small' }, confs.map(c => both ? `${c.conf} (${WEB_NAME[c.server]})` : c.conf).join(', ')),
+        confs.filter(c => !c.conf.startsWith(d.self)).map(c => actionBtn(`Désactiver ${c.conf}`, 'site', ['disable', c.server, c.conf], { cls: 'danger', confirm: `Désactiver ${c.conf} (${WEB_NAME[c.server]}) ? Le site ne sera plus servi (${TEST_CMD[c.server]} puis rechargement, retour arrière si erreur).` }))),
     ];
   });
-  const disabled = d.disabled || [];
+  const disabled = (d.disabled || []).map(splitConf);
+  const servers = (d.servers || []).map(v => WEB_NAME[v] || v).join(' et ');
   return {
     actions: actionBtn('Contrôler maintenant', 'collect-now', []),
     body: [
-      card(null, table(['Site', 'Statut', { label: 'Réponse', num: true }, 'Tendance 24 h', { label: 'Dispo 7 j', num: true }, 'Certificat', ''], rows)),
-      disabled.length ? card(`Vhosts désactivés (${disabled.length})`, table(['Fichier', ''], disabled.map(c => [el('span', { class: 'mono' }, c), actionBtn('Activer', 'site', ['enable', c], { confirm: `Activer le vhost ${c} ? (configtest + reload, retour arrière si erreur)` })]))) : null,
+      card(null, table(['Site', 'Statut', { label: 'Réponse', num: true }, 'Tendance 24 h', { label: 'Dispo 7 j', num: true }, 'Certificat', ''], rows,
+        servers ? `Aucun site trouvé dans la configuration ${servers}.` : 'Aucun serveur web actif détecté (Apache ou Nginx).')),
+      disabled.length ? card(`Configurations désactivées (${disabled.length})`, table(['Fichier', 'Serveur', ''], disabled.map(c => [el('span', { class: 'mono' }, c.conf), WEB_NAME[c.server],
+        actionBtn('Activer', 'site', ['enable', c.server, c.conf], { confirm: `Activer ${c.conf} (${WEB_NAME[c.server]}) ? (${TEST_CMD[c.server]} puis rechargement, retour arrière si erreur)` })]))) : null,
+      servers ? note(`Sites lus dans la configuration ${servers}, contrôlés toutes les 5 minutes (code HTTP et temps de réponse).`) : null,
       stale(s.updated),
     ],
   };
@@ -467,6 +478,7 @@ B.certs = async () => {
 B.traffic = async () => {
   let days = Number(sessionStorage.getItem('tdays') || 7), host = sessionStorage.getItem('thost') || '';
   const seg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Période' }), sel = el('select', { 'aria-label': 'Site' }), body = el('div', { class: 'stack' });
+  const sites = await section('sites');
   const draw = async () => {
     sessionStorage.setItem('tdays', days); sessionStorage.setItem('thost', host);
     const t = await api({ r: 'traffic', days, host });
@@ -479,7 +491,13 @@ B.traffic = async () => {
     const top = (title, kind) => el('details', { class: 'top' }, el('summary', {}, title, el('span', { class: 'muted small' }, ` (${(t.top[kind] || []).length})`)),
       table(['', { label: 'Requêtes', num: true }], (t.top[kind] || []).map(x => [el('span', { class: 'mono small trunc' }, x.item), num(x.hits)]), 'Rien sur la période.'));
     render(body,
-      t.since_first ? null : el('div', { class: 'alert info' }, badge('info', 'info'), 'Les premières statistiques arrivent dans les 5 minutes.'),
+      t.since_first ? null : el('div', { class: 'alert info' }, badge('info', 'info'), (sites.data?.traffic_logs || []).length ? 'Les premières statistiques arrivent dans les 5 minutes.'
+        : 'Aucun journal de trafic : relance « sudo hostkeep update » (Apache : GlobalLog, Nginx : conf.d/hostkeep-traffic.conf).'),
+      (sites.data?.untracked || []).length ? el('details', { class: 'alert warn untracked' }, el('summary', {}, badge('à compléter', 'warn'),
+        ` ${plural(sites.data.untracked.length, 'site')} Nginx non compté${sites.data.untracked.length > 1 ? 's' : ''} : ils ont leur propre access_log.`),
+        el('p', { class: 'small' }, 'Ajoute cette ligne dans leur bloc server (à côté de leur access_log), puis recharge Nginx :'),
+        el('pre', { class: 'log short' }, 'include snippets/hostkeep-traffic.conf;'),
+        el('p', { class: 'small mono' }, sites.data.untracked.join(', '))) : null,
       stats(
         stat('Requêtes', num(tot.hits), `dont ${num(tot.bots)} de robots`),
         stat('Visiteurs', num(visitors), 'IP uniques hors robots'),
@@ -1022,7 +1040,7 @@ B.profile = async () => {
   ], 'Enregistrer', async values => {
     const res = await api({ r: 'account.profile' }, { body: values });
     Object.assign(ME, { display_name: res.user.display_name || ME.username, email: res.user.email });
-    document.querySelector('.account-link .who').textContent = ME.display_name;
+    document.querySelectorAll('.account-text .who, .menu-head strong').forEach(e => { e.textContent = ME.display_name; });
     toast('Profil enregistré.', 'ok');
   });
   return el('div', { class: 'grid2' },

@@ -5,6 +5,17 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.2.0] — 2026-11-20
+
+### Ajouté
+- **Nginx pris en charge partout**, comme Apache : sites lus dans `nginx -T` (includes et snippets suivis : racine, certificat, socket PHP), contrôles HTTP et disponibilité, certificats, activation / désactivation d'un site (sites-enabled, `nginx -t` et retour arrière), journaux Nginx, pools PHP-FPM reliés à leurs sites, mémoire de Nginx, audit (`server_tokens`).
+- Trafic avec Nginx : journal `conf.d/hostkeep-traffic.conf` créé à l'installation (sans redéfinir un format existant), snippet `hostkeep-traffic.conf` à inclure ; la page *Trafic* liste les sites Nginx non comptés.
+- Apache et Nginx peuvent tourner ensemble (ex. Apache derrière Nginx) : les sites sont fusionnés par nom et chaque configuration indique son serveur.
+
+### Corrigé
+- Erreur affichée après l'enregistrement du profil (*Mon compte*), alors que l'enregistrement avait réussi.
+- Apache : un vhost seul sur son port n'était pas détecté.
+
 ## [2.1.1] — 2026-11-20
 
 ### Corrigé

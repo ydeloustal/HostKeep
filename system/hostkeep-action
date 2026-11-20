@@ -55,12 +55,14 @@ validate() {
     pm2-restart)
       [[ $# -eq 1 && $1 =~ ^[A-Za-z0-9._-]{1,64}$ ]] || die "nom d'appli"
       in_words "$1" "$(pm2_names)" || die "appli PM2 inconnue" ;;
-    site)
-      [[ $# -eq 2 ]] || die "arguments"
+    site)   # site enable|disable apache|nginx <config file name>
+      [[ $# -eq 3 ]] || die "arguments"
       in_list "$1" enable disable || die "action de site inconnue"
-      [[ $2 =~ ^[A-Za-z0-9._-]{1,100}$ ]] || die "nom de vhost"
-      [[ -f /etc/apache2/sites-available/$2.conf ]] || die "vhost inconnu"
-      [[ $2 == hostkeep* ]] && die "le vhost du tableau de bord est protégé"
+      in_list "$2" apache nginx || die "serveur web inconnu"
+      [[ $3 =~ ^[A-Za-z0-9._-]{1,100}$ && $3 != .* ]] || die "nom de vhost"
+      [[ $3 == hostkeep* ]] && die "le vhost du tableau de bord est protégé"
+      if [[ $2 == apache ]]; then [[ -f /etc/apache2/sites-available/$3.conf ]] || die "vhost inconnu"
+      else [[ -f /etc/nginx/sites-available/$3 && ! -L /etc/nginx/sites-available/$3 && -d /etc/nginx/sites-enabled ]] || die "site Nginx inconnu"; fi
       return 0 ;;
     certbot)
       [[ $# -eq 1 ]] && in_list "$1" dry-run renew || die "action certbot" ;;
@@ -104,14 +106,29 @@ run() {
     pm2-restart)
       echo "# pm2 restart $1"; pm2 restart "$1" && pm2 list ;;
     site)
-      if [[ $1 == enable ]]; then
-        a2ensite "$2" || return 1
-        if ! configtest; then echo "configtest en échec : retour arrière."; a2dissite "$2"; return 1; fi
+      if [[ $2 == apache ]]; then
+        if [[ $1 == enable ]]; then
+          a2ensite "$3" || return 1
+          if ! configtest; then echo "configtest en échec : retour arrière."; a2dissite "$3"; return 1; fi
+        else
+          a2dissite "$3" || return 1
+          if ! configtest; then echo "configtest en échec : retour arrière."; a2ensite "$3"; return 1; fi
+        fi
+        echo "# systemctl reload apache2"; systemctl reload apache2 && echo "Apache rechargé."
       else
-        a2dissite "$2" || return 1
-        if ! configtest; then echo "configtest en échec : retour arrière."; a2ensite "$2"; return 1; fi
-      fi
-      echo "# systemctl reload apache2"; systemctl reload apache2 && echo "Apache rechargé." ;;
+        local link=/etc/nginx/sites-enabled/$3 f prev=()
+        if [[ $1 == enable ]]; then
+          echo "# ln -s ../sites-available/$3 $link"; ln -sfn "/etc/nginx/sites-available/$3" "$link" || return 1
+          if ! { echo "# nginx -t"; nginx -t 2>&1; }; then echo "nginx -t en échec : retour arrière."; rm -f "$link"; return 1; fi
+        else
+          # every enabled entry that points to this file (it may have another name in sites-enabled)
+          for f in /etc/nginx/sites-enabled/*; do [[ $(realpath -- "$f") == "/etc/nginx/sites-available/$3" ]] && prev+=("$f"); done
+          ((${#prev[@]})) || { echo "Ce site n'est pas activé."; return 1; }
+          echo "# rm ${prev[*]}"; rm -f -- "${prev[@]}"
+          if ! { echo "# nginx -t"; nginx -t 2>&1; }; then echo "nginx -t en échec : retour arrière."; for f in "${prev[@]}"; do ln -sfn "/etc/nginx/sites-available/$3" "$f"; done; return 1; fi
+        fi
+        echo "# systemctl reload nginx"; systemctl reload nginx && echo "Nginx rechargé."
+      fi ;;
     certbot)
       if [[ $1 == dry-run ]]; then certbot renew --dry-run --no-random-sleep-on-renew; else certbot renew --no-random-sleep-on-renew; fi ;;
     apt-clean)
@@ -229,10 +246,10 @@ case $cmd in
       journal-errors) journalctl -p err -n "$n" --no-pager -o short-iso ;;
       fail2ban) tail -n "$n" /var/log/fail2ban.log ;;
       hostkeep-auth) tail -n "$n" /var/log/hostkeep/auth.log 2>/dev/null || true ;;
-      apache:*)
-        f=${key#apache:}
-        [[ $f =~ ^[A-Za-z0-9._-]+\.log$ && -f /var/log/apache2/$f && ! -L /var/log/apache2/$f ]] || die "journal inconnu"
-        tail -n "$n" -- "/var/log/apache2/$f" ;;
+      apache:*|nginx:*)
+        f=${key#*:}; d=/var/log/apache2; [[ $key == nginx:* ]] && d=/var/log/nginx
+        [[ $f =~ ^[A-Za-z0-9._-]+\.log$ && -f $d/$f && ! -L $d/$f ]] || die "journal inconnu"
+        tail -n "$n" -- "$d/$f" ;;
       pm2:*)
         a=${key#pm2:}
         [[ $a =~ ^[A-Za-z0-9._-]{1,64}$ ]] && in_words "$a" "$(pm2_names)" || die "appli PM2 inconnue"

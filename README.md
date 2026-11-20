@@ -64,7 +64,7 @@
 | Page | Tu vois | Tu peux |
 |---|---|---|
 | **Accueil** | L'état général en une phrase, les alertes triées par gravité, CPU / RAM / disque / réseau en direct, l'historique de 1 h à 30 j, les processus gourmands | Lancer les contrôles courants en un geste : sites, sauvegarde, mises à jour, audit |
-| **Sites** | Vhosts Apache, code HTTP, temps de réponse, disponibilité sur 7 j, certificats Let's Encrypt, trafic (visiteurs, robots, 404/5xx, pages, référents) | Contrôler les sites, activer ou désactiver un vhost, tester et renouveler les certificats |
+| **Sites** | Sites Apache **et** Nginx (lus dans leur configuration), code HTTP, temps de réponse, disponibilité sur 7 j, certificats Let's Encrypt, trafic (visiteurs, robots, 404/5xx, pages, référents) | Contrôler les sites, activer ou désactiver un vhost, tester et renouveler les certificats |
 | **Système** | Services systemd, applis PM2, timers et crontabs, pools PHP-FPM, requêtes MariaDB lentes, partitions et gros dossiers | Redémarrer ou recharger un service, redémarrer une appli PM2, vider le cache apt, réduire le journal |
 | **Sécurité** | Audit des sites (`.env`, `.git`, dumps exposés, dossiers listables, en-têtes, ports, SSH), mises à jour apt, fail2ban, ports ouverts, connexions SSH, journal des actions | Lancer l'audit, installer les mises à jour, débannir une IP, mettre à jour le panel |
 | **Données** | Bases MariaDB, sauvegardes quotidiennes, journaux filtrables, explorateur de fichiers en lecture seule | Sauvegarder, télécharger, restaurer une base (copie de sécurité automatique avant) |
@@ -130,8 +130,8 @@ Depuis un clone, les étapes se lancent aussi une par une : `sudo ./install.sh d
 
 | Détecté sur 80/443 | Ce que fait l'installateur |
 |---|---|
-| **Nginx** | Ajoute un server block `hostkeep.conf` (sites-available ou conf.d) |
-| **Apache** | Ajoute les vhosts `hostkeep.conf` / `hostkeep-le-ssl.conf` (active aussi les pages Sites et Trafic) |
+| **Nginx** | Ajoute un server block `hostkeep.conf` (sites-available ou conf.d) et le journal de trafic `conf.d/hostkeep-traffic.conf` |
+| **Apache** | Ajoute les vhosts `hostkeep.conf` / `hostkeep-le-ssl.conf` et le journal de trafic (GlobalLog) |
 | **Caddy** | Ajoute `/etc/caddy/hostkeep.caddy` et une ligne `import` dans le Caddyfile ; HTTPS géré par Caddy |
 | **Traefik, HAProxy, Nginx Proxy Manager, conteneur…** | Mode `proxy` : le panel écoute en HTTP local (`hostkeep-http.service`) ; route Traefik écrite si le fournisseur `file` est trouvé, sinon exemples dans `/etc/hostkeep/proxy-snippets.txt` |
 | **Rien** | Propose d'installer Nginx (ou Apache, Caddy) |
@@ -288,7 +288,8 @@ Les autres sites ne sont pas touchés. Le certificat Let's Encrypt est conservé
 | Erreur 502 / 503 | `hostkeep.service` arrêté | `sudo hostkeep status`, `sudo hostkeep logs`, puis `sudo /opt/hostkeep/install.sh app` |
 | Alerte « Le collecteur ne remonte plus de mesures » | Timers arrêtés ou erreur de collecte | `systemctl list-timers 'hostkeep-*'` et `journalctl -u 'hostkeep-collect@*' -n 50` |
 | E-mails non reçus | SMTP mal réglé | *Administration › E-mails › Envoyer un e-mail de test* affiche l'erreur exacte du serveur |
-| Pages *Sites* et *Trafic* vides | Le serveur web n'est pas Apache (ces pages lisent Apache) | Comportement normal |
+| Pages *Sites* et *Trafic* vides | Ni Apache ni Nginx actifs (Caddy et les reverse proxy ne sont pas lus), ou collecte pas encore passée | « Contrôler maintenant », ou `sudo hostkeep collect` |
+| Un site Nginx manque dans *Trafic* | Il a son propre `access_log` | Ajoute `include snippets/hostkeep-traffic.conf;` dans son bloc `server`, puis recharge Nginx (la page *Trafic* liste les sites concernés) |
 | « Session expirée, réessaie » à la connexion | Cookie bloqué, ou proxy qui ne transmet pas `X-Forwarded-Proto` | Ouvre l'adresse en `https://` ; vérifie la configuration du proxy |
 
 **Où regarder :** `sudo hostkeep logs`, `/var/log/hostkeep/` (connexions, erreurs PHP), et les journaux du serveur web.
