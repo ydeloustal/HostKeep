@@ -5,6 +5,8 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.5.0] — 2026-11-21
+
 ### Ajouté
 - **Double authentification (TOTP, RFC 6238)** compatible Aegis, Google Authenticator, FreeOTP, Bitwarden, 1Password : page `/2fa.php` avec QR code (dessiné par le serveur, sans dépendance) et clé à saisir à la main, 10 codes de secours à usage unique, régénération des codes, désactivation (mot de passe + code).
 - Connexion en deux étapes : après le mot de passe, code à 6 chiffres ou code de secours (5 essais, 5 minutes, compté dans la limite de tentatives). Un code déjà utilisé est refusé.
