@@ -5,6 +5,34 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.0.0] — 2026-11-20
+
+### Ajouté
+- **Installation en une ligne** (`curl … | sudo bash`) : récupère le dépôt, vérifie et installe seulement les prérequis manquants, pose les questions utiles (ou aucune avec `--yes`) et crée le premier compte.
+- **Détection du serveur web** (Apache, Nginx, Caddy, Traefik / HAProxy / conteneur sur les ports 80/443) : le panel est ajouté comme nouveau site sans modifier les autres ; refus si le domaine est déjà servi ; test de syntaxe et retour automatique à la configuration précédente en cas d'erreur. HTTPS Let's Encrypt optionnel.
+- Mode **reverse proxy** : instance HTTP locale dédiée (`hostkeep-http.service`), route Traefik générée si possible, exemples HAProxy / Nginx Proxy Manager.
+- **`hostkeep.service`** : PHP-FPM dédié lancé par systemd, redémarrage automatique, sandboxing.
+- Commande **`hostkeep`** : `status`, `admin`, `users`, `user create`, `passwd`, `unlock`, `web`, `update`, `logs`, `uninstall`.
+- **Comptes utilisateurs** en base, connexion par identifiant ou e-mail, mot de passe temporaire à changer à la première connexion, invitation et « mot de passe oublié » par e-mail, blocage par compte après plusieurs échecs.
+- **Rôles et permissions (RBAC)** : Super Admin, Administrateur, Éditeur / Modérateur, Lecteur ; vérifiés côté serveur sur chaque route et chaque action root, interface adaptée au rôle.
+- **Sessions** listées par appareil et révocables (soi-même ou par un administrateur).
+- Page **Administration** : utilisateurs, matrice des rôles, paramètres (général, SMTP avec e-mail de test, alertes par e-mail, sauvegardes, sécurité avec liste d'IP autorisées).
+- Page **Mon compte** : profil, mot de passe, sessions.
+- **Alertes par e-mail** (nouvelles alertes et résolutions), client SMTP intégré (STARTTLS / TLS), mot de passe SMTP chiffré.
+- Changement de **domaine** depuis le panel (Super Admin).
+- Journal des actions enrichi : connexions, comptes, paramètres, téléchargements.
+
+### Modifié
+- Heure, activation et durée de conservation des sauvegardes réglables depuis le panel.
+- Cookie de session `Secure` selon le protocole réel (HTTPS direct ou via le proxy), HSTS envoyé par l'application.
+- La protection Apache globale (`hardening.conf`) n'est plus activée d'office : elle s'applique à tous les sites, elle est désormais proposée (`--harden-apache`).
+
+### Migration depuis 1.x
+- Le compte unique du `.env` est importé comme Super Admin (même mot de passe) ; `set-password.php` reste utilisable.
+- L'ancien pool PHP-FPM est retiré et le vhost existant est basculé sur `hostkeep.service` automatiquement.
+
+## Refonte de l'interface (incluse dans 2.0.0)
+
 ### Ajouté
 - Recherche universelle (`Ctrl K`, `/` ou la loupe) : ouvre n'importe quelle page ou section et lance les actions courantes.
 - Accueil : bandeau d'état général, alertes triées par gravité et actions rapides (contrôler les sites, sauvegarder, chercher les mises à jour, lancer l'audit).
