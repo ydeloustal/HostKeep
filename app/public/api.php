@@ -24,7 +24,7 @@ if ($isPost && !check_csrf()) {
 session_write_close();   // release the session lock: requests run in parallel
 
 const SECTIONS = ['services', 'processes', 'sites', 'certs', 'pm2', 'security', 'databases', 'storage', 'cron', 'updates', 'logkeys',
-    'backups', 'secscan', 'perf', 'panel'];
+    'backups', 'offsite', 'secscan', 'perf', 'panel'];
 
 $r = (string) ($_GET['r'] ?? '');
 $in = $isPost ? (json_decode((string) file_get_contents('php://input'), true) ?: []) : [];
@@ -221,7 +221,10 @@ try {
 
         case 'backupdl':
             require_perm($me, 'backups.download');
-            audit('téléchargement de sauvegarde ' . ($_GET['pre'] ?? (($_GET['db'] ?? '') . ' ' . ($_GET['day'] ?? ''))));
+            audit('téléchargement de sauvegarde ' . ($_GET['pre'] ?? ((isset($_GET['archive']) ? ($_GET['archive'] ?: 'complète') : ($_GET['db'] ?? '')) . ' ' . ($_GET['day'] ?? ''))));
+            if (isset($_GET['archive'])) {
+                backup_stream((string) ($_GET['day'] ?? ''), (string) $_GET['archive']);
+            }
             backup_download((string) ($_GET['day'] ?? ''), (string) ($_GET['db'] ?? ''), (string) ($_GET['pre'] ?? ''));
 
         case 'audit':

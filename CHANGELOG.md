@@ -5,6 +5,17 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouté
+- **Sauvegarde des fichiers** en plus des bases : `/var/www`, `/etc/apache2`, `/etc/nginx`, `/etc/letsencrypt` et `/etc/hostkeep`, en archives `files/<nom>.tar.gz` (root seulement), avec exclusions réglables, conservation séparée (3 jours par défaut) et vérification de l'espace disque avant de commencer.
+- `manifest.json` dans chaque sauvegarde : contenu, tailles, sommes SHA-256 et erreurs.
+- **Copie externe avec rclone** (*Paramètres › Sauvegarde externe*) : S3, SFTP ou toute configuration rclone (Google Drive, Dropbox…), chiffrement rclone crypt, conservation à distance, limite de débit, bouton *Tester la connexion*, envoi juste après chaque sauvegarde et nouvel essai toutes les heures.
+- Accueil et *Données › Sauvegardes* : dernière sauvegarde, dernière copie externe réussie, téléchargement de l'**archive complète** d'un jour (ou d'une archive de fichiers) en un clic ; alertes si la sauvegarde est incomplète ou si la copie externe échoue ou date de plus de 36 h.
+- Commandes `hostkeep backup`, `hostkeep restore list`, `hostkeep restore fetch [jour]` (rapatriement depuis la copie externe, sommes vérifiées) et `hostkeep restore files <jour> <archive> [--in-place]`.
+
+### Modifié
+- rclone fait partie des prérequis (installé aussi lors d'une mise à jour).
+- Le PHP-FPM du panel laisse jusqu'à 6 h à une requête (téléchargement en flux d'une grosse sauvegarde) ; le temps CPU reste limité.
+
 ## [2.3.0] — 2026-11-21
 
 ### Ajouté

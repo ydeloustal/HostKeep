@@ -227,7 +227,7 @@ dns_check() {   # warn (not fatal) when the domain does not resolve to this serv
 }
 
 # ---------- deps ----------
-PKGS=(php-fpm php-cli php-mysql php-curl php-mbstring mariadb-server fail2ban python3-systemd certbot sudo curl python3 logrotate git ca-certificates iproute2)
+PKGS=(php-fpm php-cli php-mysql php-curl php-mbstring mariadb-server fail2ban python3-systemd certbot sudo curl python3 logrotate git ca-certificates iproute2 rclone)
 cmd_deps() {
   os_check
   step "Prérequis"
@@ -274,6 +274,10 @@ cmd_app() {
   local PHPV; PHPV=$(php_version)
   [[ -n $PHPV && -x /usr/sbin/php-fpm$PHPV ]] || die "PHP-FPM $PHPV introuvable. Lance d'abord : sudo $SRC/install.sh deps"
   command -v mysql >/dev/null || die "MariaDB introuvable. Lance d'abord : sudo $SRC/install.sh deps"
+  if ! command -v rclone >/dev/null; then   # added in 2.4.0 (off-site copy of the backups): also on updates
+    { apt_install_quiet rclone || { apt-get update -qq </dev/null && apt_install_quiet rclone; }; } && ok "rclone installé (copie externe des sauvegardes)" \
+      || warn "rclone n'a pas pu être installé : la copie externe des sauvegardes restera indisponible (sudo apt install rclone)."
+  fi
 
   step "Utilisateur système et dossiers"
   id hostkeep >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin hostkeep

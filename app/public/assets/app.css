@@ -579,3 +579,10 @@ input[type=checkbox], input[type=radio] { width: 20px; height: 20px; min-height:
 details.alert.untracked { display: block; border-top: 0; }
 details.alert.untracked summary { cursor: pointer; }
 details.alert.untracked pre { margin: 6px 0; }
+
+/* Backups: one line with text on the left and its button on the right (wraps on phones). */
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.row-between p { margin: 2px 0 0; }
+/* Settings: "remove the stored value" under a secret field. */
+.clear-secret { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.card > .stats { margin-bottom: 0; }
