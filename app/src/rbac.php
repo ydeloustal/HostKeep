@@ -19,7 +19,7 @@ const PERMISSIONS = [
     'actions.routine' => ['editor', 'Lancer les contrôles : sites, audit, mises à jour disponibles, test des certificats, sauvegarde'],
     'actions.services' => ['editor', 'Redémarrer / recharger un service ou une appli PM2, débannir une IP'],
     'logs.view' => ['editor', 'Lire les journaux'],
-    'actions.system' => ['admin', 'Actions système : vhosts, renouvellement des certificats, installation des mises à jour, nettoyage, restauration de base'],
+    'actions.system' => ['admin', 'Actions système : vhosts, renouvellement des certificats, installation des mises à jour, redémarrage du serveur, nettoyage, restauration de base'],
     'backups.download' => ['admin', 'Télécharger les sauvegardes'],
     'files.view' => ['admin', 'Explorateur de fichiers (lecture seule)'],
     'audit.view' => ['admin', 'Journal des actions'],
@@ -40,7 +40,7 @@ const ACTION_PERMS = [
     'backup-now' => 'actions.routine', 'certbot:dry-run' => 'actions.routine',
     'service' => 'actions.services', 'pm2-restart' => 'actions.services', 'f2b-unban' => 'actions.services',
     'site' => 'actions.system', 'certbot:renew' => 'actions.system', 'apt-clean' => 'actions.system', 'journal-vacuum' => 'actions.system',
-    'apt-upgrade' => 'actions.system', 'backup-restore' => 'actions.system',
+    'apt-upgrade' => 'actions.system', 'backup-restore' => 'actions.system', 'reboot' => 'actions.system',
     'self-update' => 'panel.update', 'self-rollback' => 'panel.update', 'web-domain' => 'panel.update',
 ];
 

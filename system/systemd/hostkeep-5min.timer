@@ -4,6 +4,8 @@ Description=Hostkeep : sites, certificats, sécurité, trafic (toutes les 5 min)
 
 [Timer]
 OnCalendar=*-*-* *:0/5:00
+# and once just after boot, so the pages do not show the previous boot for up to 5 min
+OnBootSec=40s
 Unit=hostkeep-collect@5min.service
 AccuracySec=10s
 

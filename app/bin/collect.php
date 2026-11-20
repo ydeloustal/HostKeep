@@ -231,8 +231,27 @@ function c_security(): void
     }
     ksort($listening);
     $running = php_uname('r');
-    $kernels = lines(sh('ls /boot | sed -n "s/^vmlinuz-//p" | sort -V'));
+    // Only compare kernels of the same flavour (6.1.0-54-amd64 vs 6.1.0-56-amd64, not -cloud-amd64).
+    $flavour = preg_match('/^[\d.]+-\d+-(.+)$/', $running, $m) ? $m[1] : null;
+    $kernels = array_values(array_filter(lines(sh('ls /boot | sed -n "s/^vmlinuz-//p" | sort -V')),
+        fn($k) => $flavour === null || preg_match('/^[\d.]+-\d+-' . preg_quote($flavour, '/') . '$/', $k)));
     $latest = end($kernels) ?: $running;
+    $bootedAt = time() - (int) (float) @file_get_contents('/proc/uptime');
+    $installedAt = @filectime("/boot/vmlinuz-$latest") ?: null;   // ctime = install time (dpkg keeps the build mtime)
+    $grubCfg = (string) @file_get_contents('/boot/grub/grub.cfg');
+    $grubFirst = preg_match('/^\s*linux\s+\S*vmlinuz-(\S+)/m', $grubCfg, $m) ? $m[1] : null;
+    $grubDefault = preg_match('/^\s*GRUB_DEFAULT\s*=\s*["\']?([^"\'\n]*)/m', (string) @file_get_contents('/etc/default/grub'), $m) ? trim($m[1]) : '0';
+    // Rebooted after the new kernel was installed, yet still running the old one: rebooting again will not help.
+    $stuck = $latest !== $running && $installedAt && $bootedAt > $installedAt;
+    $hint = null;
+    if ($stuck) {
+        $hint = match (true) {
+            $grubCfg === '' => "Le serveur a redémarré sur l'ancien noyau et n'utilise pas GRUB : le noyau est sans doute imposé par l'hébergeur (console du VPS).",
+            $grubFirst !== null && $grubFirst !== $latest && in_array($grubDefault, ['0', ''], true) => "Le serveur a redémarré sur l'ancien noyau : le menu GRUB n'a pas été régénéré (premier choix : $grubFirst). Le bouton « Redémarrer le serveur » lance update-grub avant.",
+            !in_array($grubDefault, ['0', ''], true) => "Le serveur a redémarré sur l'ancien noyau : GRUB_DEFAULT=$grubDefault dans /etc/default/grub impose une autre entrée du menu.",
+            default => "Le serveur a redémarré sur l'ancien noyau alors que GRUB propose $latest en premier : le choix se fait sans doute côté hébergeur (console du VPS).",
+        };
+    }
     save('security', [
         'jails' => $jails,
         'listening' => array_values($listening),
@@ -240,6 +259,10 @@ function c_security(): void
         'kernel_running' => $running,
         'kernel_latest' => $latest,
         'reboot_required' => is_file('/run/reboot-required') || $latest !== $running,
+        'booted_at' => $bootedAt,
+        'grub_first' => $grubFirst,
+        'reboot_stuck' => (bool) $stuck,
+        'reboot_hint' => $hint,
     ]);
 }
 

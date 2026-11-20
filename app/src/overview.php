@@ -1,6 +1,20 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * The security snapshot is refreshed every 5 minutes: right after a reboot it still describes the
+ * previous boot. When the running kernel differs from the one it recorded, correct it from what is live.
+ */
+function security_live(array $sec): array
+{
+    $running = php_uname('r');
+    if (($sec['kernel_running'] ?? $running) === $running) {
+        return $sec;
+    }
+    return array_merge($sec, ['kernel_running' => $running, 'booted_at' => null, 'reboot_stuck' => false, 'reboot_hint' => null,
+        'reboot_required' => ($sec['kernel_latest'] ?? $running) !== $running, 'since_reboot' => true]);
+}
+
 /** Server state summary and alerts: home page, header pill, and e-mail alerts (collector). */
 function overview(): array
 {
@@ -50,9 +64,12 @@ function overview(): array
             $add($c['days'] < 5 ? 'crit' : 'warn', "Certificat {$c['name']} expire dans {$c['days']} j.", 'certs');
         }
     }
-    $sec = snapshot('security')['data'] ?? [];
-    if (!empty($sec['reboot_required'])) {
-        $add('info', 'Redémarrage requis (nouveau noyau ' . ($sec['kernel_latest'] ?? '?') . ').', 'security');
+    $sec = security_live(snapshot('security')['data'] ?? []);
+    if (!empty($sec['reboot_stuck'])) {
+        $add('warn', "Le serveur a redémarré mais tourne toujours sur l'ancien noyau {$sec['kernel_running']} (au lieu de {$sec['kernel_latest']}).", 'security');
+    } elseif (!empty($sec['reboot_required'])) {
+        $why = ($sec['kernel_latest'] ?? '') !== ($sec['kernel_running'] ?? '') ? 'nouveau noyau ' . ($sec['kernel_latest'] ?? '?') : 'mises à jour système';
+        $add('info', "Redémarrage requis ($why).", 'security');
     }
     $panel = snapshot('panel')['data'] ?? [];
     if (!empty($panel['behind'])) {

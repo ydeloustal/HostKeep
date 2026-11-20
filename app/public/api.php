@@ -185,6 +185,9 @@ try {
                 $snap['data']['uptime'] = site_uptime();
                 $snap['data']['latency'] = site_latency_24h();
             }
+            if ($name === 'security' && $snap) {
+                $snap['data'] = security_live($snap['data'] ?? []);
+            }
             json_out($snap ?? ['updated' => 0, 'data' => null]);
 
         case 'log':
