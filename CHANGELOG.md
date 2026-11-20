@@ -5,6 +5,8 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.3.0] — 2026-11-21
+
 ### Ajouté
 - **Redémarrer le serveur** depuis *Sécurité › Audit* (rôle administrateur, confirmation) : régénère le menu GRUB s'il ne propose pas le dernier noyau, puis redémarre 10 s plus tard.
 - Carte *Redémarrage* : heure du dernier démarrage, et diagnostic quand le serveur a redémarré mais tourne toujours sur l'ancien noyau (GRUB non régénéré, `GRUB_DEFAULT`, noyau imposé par l'hébergeur).
