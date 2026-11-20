@@ -462,3 +462,75 @@ dialog.palette[open] { display: flex; flex-direction: column; animation: pop-in 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+
+/* ---------- accounts, administration, forms ---------- */
+.mainnav .nav-extra { display: none; }   /* bottom tab bar keeps 5 tabs: Administration is in the "More" menu */
+.menu a.icon-btn { text-decoration: none; }
+.account-link { min-height: 56px !important; height: auto !important; padding: 6px 12px !important; }
+.account-link .lbl { display: flex !important; flex-direction: column; line-height: 1.25; min-width: 0; }
+.account-link .who { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-link small { color: var(--muted); font-size: 12px; }
+.menu [aria-current] { background: var(--accent-soft); color: var(--accent) !important; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 14px; }
+.user-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.user-cell.big .avatar { width: 52px; height: 52px; font-size: 22px; }
+.user-cell.big strong { font-size: 17px; }
+.user-cell .badge { margin-top: 4px; }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 16px 0 0; font-size: 14px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }
+
+.form { display: flex; flex-direction: column; gap: 16px; }
+.field { display: flex; flex-direction: column; gap: 6px; margin: 0; min-width: 0; }
+.field > label, .field > legend { font-weight: 600; font-size: 14px; }
+.field input:not([type=checkbox]):not([type=radio]), .field select, .field textarea { width: 100%; }
+.field input:disabled, .field select:disabled, .field textarea:disabled { opacity: .7; cursor: not-allowed; }
+textarea { font: inherit; font-family: var(--mono); font-size: 14px; color: var(--text); background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px; padding: 10px 12px; resize: vertical; max-width: 100%; }
+.field.check > label { display: flex; align-items: center; gap: 10px; font-weight: 500; min-height: var(--tap); cursor: pointer; }
+input[type=checkbox], input[type=radio] { width: 20px; height: 20px; min-height: 0; margin: 0; flex-shrink: 0; accent-color: var(--accent); }
+.help { margin: 0; color: var(--muted); font-size: 13px; font-weight: 400; }
+.field.check .help { margin-left: 30px; margin-top: -6px; }
+.field-error { margin: 0; color: var(--crit); font-size: 13px; font-weight: 600; }
+.radios { border: 0; padding: 0; gap: 4px; }
+.radios label { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.radios label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.radios label:has(input:disabled) { opacity: .55; cursor: not-allowed; }
+.radios label > span { display: flex; flex-direction: column; gap: 2px; }
+.radios input { margin-top: 2px; }
+.role-help { margin-top: -10px; }
+.form-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.form-info { color: var(--text); background: var(--ok-soft); border-radius: 10px; padding: 10px 12px; text-align: left; }
+.login-links { margin: 16px 0 0; font-size: 14px; }
+.login-links a, .login-links .linkish { color: var(--accent); }
+.login-card code { font-family: var(--mono); font-size: 13px; }
+.secret { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; margin-top: 12px; border-radius: 12px; background: var(--panel-2); border: 1px dashed var(--border-strong); }
+.secret code { flex: 1; font-size: 18px; letter-spacing: .04em; user-select: all; overflow-wrap: anywhere; }
+
+.menu-more { position: relative; display: inline-block; border: 0; padding: 0; vertical-align: middle; }
+.menu-more summary { list-style: none; display: inline-flex; align-items: center; justify-content: center; min-width: var(--tap); }
+.menu-more summary::-webkit-details-marker { display: none; }
+.more-pop { position: absolute; z-index: 5; right: 0; top: calc(100% + 4px); display: flex; flex-direction: column; min-width: 250px; padding: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--pop); }
+.more-pop .linkish { color: var(--text); padding: 10px 12px; border-radius: 8px; min-height: var(--tap); }
+.more-pop .linkish:hover { background: var(--panel-2); text-decoration: none; }
+.linkish.danger { color: var(--crit) !important; }
+
+.role-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); }
+.role-card { padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+.role-card.mine { border-color: var(--accent); }
+.role-card p { margin: 8px 0 0; color: var(--muted); }
+.yes { color: var(--ok); display: inline-flex; }
+.yes .i { width: 18px; height: 18px; }
+.no { color: var(--muted); }
+.warn-stat .value { color: var(--warn); }
+
+@media (min-width: 720px) {
+  .form .field:not(.check):not(.radios) { display: grid; grid-template-columns: minmax(180px, 32%) 1fr; column-gap: 20px; align-items: start; }
+  .form .field:not(.check):not(.radios) > label { padding-top: 9px; }
+  .form .field:not(.check):not(.radios) > :not(label) { grid-column: 2; }
+  .role-help { margin-left: calc(min(32%, 100%) + 20px); }
+}
+@media (min-width: 1024px) {
+  .mainnav .nav-extra { display: flex; margin-top: 10px; }
+  .menu .menu-admin { display: none; }
+  .account-link { order: -1; margin-bottom: 4px; border: 1px solid var(--border) !important; border-radius: 12px !important; }
+}

@@ -3,13 +3,18 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/bootstrap.php';
 require __DIR__ . '/../src/auth.php';
+require __DIR__ . '/../src/mailer.php';
+require __DIR__ . '/../src/users.php';
 require __DIR__ . '/../src/live.php';
 require __DIR__ . '/../src/actions.php';
+require __DIR__ . '/../src/overview.php';
 
 security_headers();
+enforce_ip_allowlist(true);
 start_session();
 $poll = ($_SERVER['HTTP_X_POLL'] ?? '') === '1';
-if (!is_logged(!$poll)) {
+$me = current_user(!$poll);
+if (!$me) {
     json_out(['error' => 'auth'], 401);
 }
 $isPost = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
@@ -22,8 +27,139 @@ const SECTIONS = ['services', 'processes', 'sites', 'certs', 'pm2', 'security', 
     'backups', 'secscan', 'perf', 'panel'];
 
 $r = (string) ($_GET['r'] ?? '');
+$in = $isPost ? (json_decode((string) file_get_contents('php://input'), true) ?: []) : [];
+if (!is_array($in)) {
+    $in = [];
+}
+/* An account flagged "must change password" may only reach its own account routes until it does. */
+if ($me['must_change_password'] && !in_array($r, ['me', 'account.password'], true)) {
+    json_out(['error' => 'Change d\'abord ton mot de passe.', 'must_change_password' => true], 403);
+}
+$post = static function () use ($isPost): void {
+    if (!$isPost) {
+        json_out(['error' => 'POST requis'], 405);
+    }
+};
+$uid = static fn(): int => (int) ($_GET['id'] ?? 0);
+
 try {
     switch ($r) {
+        /* ---------- session & own account ---------- */
+        case 'me':
+            json_out(me_payload($me));
+
+        case 'account.profile':
+            $post();
+            $res = user_update($me['id'], array_intersect_key($in, array_flip(['display_name', 'email'])), $me);
+            json_out($res, isset($res['errors']) ? 422 : 200);
+
+        case 'account.password':
+            $post();
+            $full = db()->prepare('SELECT password_hash FROM users WHERE id = ?');
+            $full->execute([$me['id']]);
+            $hash = (string) $full->fetchColumn();
+            if (!password_verify((string) ($in['current'] ?? ''), $hash)) {
+                json_out(['errors' => ['current' => 'Mot de passe actuel incorrect.']], 422);
+            }
+            $new = (string) ($in['password'] ?? '');
+            if ($p = password_problem($new, $me)) {
+                json_out(['errors' => ['password' => $p]], 422);
+            }
+            if (password_verify($new, $hash)) {
+                json_out(['errors' => ['password' => 'Choisis un mot de passe différent de l\'actuel.']], 422);
+            }
+            set_password($me['id'], $new, false, current_session_id());
+            audit('mot de passe changé');
+            json_out(['ok' => true]);
+
+        case 'account.sessions':
+            json_out(sessions_of($me['id']));
+
+        case 'account.revoke':
+            $post();
+            $n = revoke_sessions($me['id'], isset($in['id']) ? (string) $in['id'] : null);
+            if ($n) {
+                audit("$n session(s) fermée(s)");
+            }
+            json_out(['revoked' => $n]);
+
+        /* ---------- users (Administration) ---------- */
+        case 'users':
+            require_perm($me, 'users.view');
+            json_out(['users' => users_list($me), 'roles' => roles_payload($me), 'mail' => mail_configured()]);
+
+        case 'users.create':
+            $post();
+            require_perm($me, 'users.manage');
+            $res = user_create($in, $me);
+            json_out($res, isset($res['errors']) ? 422 : 200);
+
+        case 'users.update':
+            $post();
+            require_perm($me, 'users.manage');
+            $res = user_update($uid(), $in, $me);
+            json_out($res, isset($res['errors']) ? 422 : 200);
+
+        case 'users.delete':
+            $post();
+            require_perm($me, 'users.manage');
+            $err = user_delete($uid(), $me);
+            json_out($err ? ['error' => $err] : ['ok' => true], $err ? 422 : 200);
+
+        case 'users.reset':
+            $post();
+            require_perm($me, 'users.manage');
+            $res = user_reset_password($uid(), (string) ($in['mode'] ?? 'generate'), $me);
+            json_out($res, isset($res['error']) ? 422 : 200);
+
+        case 'users.sessions':
+            require_perm($me, 'users.manage');
+            $t = user_by_id($uid());
+            if (!$t || !can_manage_user($me, $t)) {
+                json_out(['error' => 'Compte introuvable ou hors de tes droits.'], 403);
+            }
+            json_out(sessions_of($t['id']));
+
+        case 'users.revoke':
+            $post();
+            require_perm($me, 'users.manage');
+            $t = user_by_id($uid());
+            if (!$t || !can_manage_user($me, $t) || $t['id'] === $me['id']) {
+                json_out(['error' => 'Compte introuvable ou hors de tes droits.'], 403);
+            }
+            $n = revoke_sessions($t['id'], isset($in['session']) ? (string) $in['session'] : null);
+            audit("$n session(s) de {$t['username']} fermée(s)");
+            json_out(['revoked' => $n]);
+
+        /* ---------- settings ---------- */
+        case 'settings':
+            require_perm($me, 'settings.view');
+            json_out(['groups' => settings_for($me), 'domain' => env('HOSTKEEP_DOMAIN'), 'webserver' => env('HOSTKEEP_WEBSERVER', 'apache'),
+                'https' => env('HOSTKEEP_HTTPS', 'yes') !== 'no', 'version' => app_version(), 'can_domain' => can($me, 'panel.update')]);
+
+        case 'settings.save':
+            $post();
+            $group = (string) ($_GET['group'] ?? '');
+            require_perm($me, settings_schema()[$group]['perm'] ?? 'settings.security');
+            $errors = settings_save($group, (array) ($in['values'] ?? []), $me);
+            json_out($errors ? ['errors' => $errors] : ['ok' => true, 'groups' => settings_for($me)], $errors ? 422 : 200);
+
+        case 'settings.testmail':
+            $post();
+            require_perm($me, 'settings.smtp');
+            $to = trim((string) ($in['to'] ?? '')) ?: (string) $me['email'];
+            if (!valid_email($to)) {
+                json_out(['error' => 'Indique une adresse de destination (ou renseigne ton e-mail dans Mon compte).'], 422);
+            }
+            try {
+                send_mail($to, 'E-mail de test', "Bonjour,\n\nCet e-mail confirme que l'envoi SMTP de " . panel_name() . " fonctionne.\nEnvoyé par {$me['username']} le " . date('d/m/Y à H:i') . ".\n");
+            } catch (Throwable $e) {
+                json_out(['error' => $e->getMessage()], 422);
+            }
+            audit("e-mail de test envoyé à $to");
+            json_out(['ok' => true, 'to' => $to]);
+
+        /* ---------- monitoring ---------- */
         case 'live':
             json_out(live());
 
@@ -41,6 +177,9 @@ try {
             if (!in_array($name, SECTIONS, true)) {
                 json_out(['error' => 'section inconnue'], 404);
             }
+            if ($name === 'logkeys') {
+                require_perm($me, 'logs.view');
+            }
             $snap = snapshot($name);
             if ($name === 'sites' && $snap) {
                 $snap['data']['uptime'] = site_uptime();
@@ -49,6 +188,7 @@ try {
             json_out($snap ?? ['updated' => 0, 'data' => null]);
 
         case 'log':
+            require_perm($me, 'logs.view');
             json_out(read_log((string) ($_GET['key'] ?? ''), (int) ($_GET['lines'] ?? 200)));
 
         case 'job':
@@ -58,39 +198,51 @@ try {
             json_out(traffic((int) ($_GET['days'] ?? 7), (string) ($_GET['host'] ?? '')));
 
         case 'fs':
+            require_perm($me, 'files.view');
             $res = fs_list((string) ($_GET['path'] ?? '/var/www'));
             json_out($res, isset($res['error']) ? 400 : 200);
 
         case 'fsroots':
+            require_perm($me, 'files.view');
             json_out(['roots' => fs_roots()]);
 
         case 'fsread':
+            require_perm($me, 'files.view');
             $res = fs_read((string) ($_GET['path'] ?? ''));
             json_out($res, isset($res['error']) ? 400 : 200);
 
         case 'fsdl':
+            require_perm($me, 'files.view');
+            audit('téléchargement de fichier ' . mb_substr((string) ($_GET['path'] ?? ''), 0, 200));
             fs_download((string) ($_GET['path'] ?? ''));
 
         case 'backupdl':
+            require_perm($me, 'backups.download');
+            audit('téléchargement de sauvegarde ' . ($_GET['pre'] ?? (($_GET['db'] ?? '') . ' ' . ($_GET['day'] ?? ''))));
             backup_download((string) ($_GET['day'] ?? ''), (string) ($_GET['db'] ?? ''), (string) ($_GET['pre'] ?? ''));
 
         case 'audit':
-            json_out(db()->query('SELECT ts, ip, user, action, job, rc FROM audit_log ORDER BY id DESC LIMIT 200')->fetchAll());
+            require_perm($me, 'audit.view');
+            json_out(db()->query('SELECT ts, ip, user, action, job, rc FROM audit_log ORDER BY id DESC LIMIT 300')->fetchAll());
 
         case 'action':
-            if (!$isPost) {
-                json_out(['error' => 'POST requis'], 405);
+            $post();
+            $verb = (string) ($in['verb'] ?? '');
+            $args = array_values((array) ($in['args'] ?? []));
+            $perm = action_permission($verb, $args);
+            if ($perm === null) {
+                json_out(['error' => 'Action refusée.'], 400);
             }
-            $in = json_decode((string) file_get_contents('php://input'), true);
-            $res = start_action((string) ($in['verb'] ?? ''), array_values((array) ($in['args'] ?? [])));
+            require_perm($me, $perm);
+            $res = start_action($verb, $args);
             json_out($res, isset($res['error']) ? 400 : 200);
 
         default:
             json_out(['error' => 'route inconnue'], 404);
     }
 } catch (Throwable $e) {
-    error_log('hostkeep: ' . $e->getMessage());
-    json_out(['error' => 'Erreur serveur : ' . $e->getMessage()], 500);
+    error_log('hostkeep: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+    json_out(['error' => 'Erreur serveur. Détails dans /var/log/hostkeep/php-error.log.'], 500);
 }
 
 function history(string $range): array
@@ -184,96 +336,4 @@ function site_history(string $host, string $days): array
     return ['host' => $host, 'days' => $days === '30' ? 30 : 7, 'points' => $points,
         'checks' => $n, 'errors' => $err, 'avg' => $ok ? round(array_sum($ok) / count($ok)) : null,
         'max' => $points ? max(array_map('intval', array_column($points, 'max_ms'))) : null];
-}
-
-function overview(): array
-{
-    $last = db()->query('SELECT * FROM metrics ORDER BY ts DESC LIMIT 1')->fetch() ?: null;
-    $alerts = [];
-    $add = static function (string $level, string $text, string $section) use (&$alerts): void {
-        $alerts[] = ['level' => $level, 'text' => $text, 'section' => $section];
-    };
-
-    if (!$last || time() - (int) $last['ts'] > 180) {
-        $add('warn', 'Le collecteur ne remonte plus de mesures (timers systemd hostkeep-*).', 'overview');
-    }
-    if ($last) {
-        $diskPct = 100 * $last['disk_used'] / max(1, $last['disk_total']);
-        if ($diskPct > 85) {
-            $add($diskPct > 95 ? 'crit' : 'warn', sprintf('Disque / rempli à %.0f %%.', $diskPct), 'storage');
-        }
-        $memPct = 100 * $last['mem_avail'] / max(1, $last['mem_total']);
-        if ($memPct < 10) {
-            $add('warn', sprintf('RAM disponible faible : %.0f %%.', $memPct), 'resources');
-        }
-    }
-    $svc = snapshot('services')['data'] ?? [];
-    foreach ($svc['units'] ?? [] as $u) {
-        if (($u['ActiveState'] ?? '') !== 'active') {
-            $add('crit', "Service {$u['Id']} : {$u['ActiveState']}.", 'services');
-        }
-    }
-    foreach ($svc['failed'] ?? [] as $f) {
-        $add('crit', "Unité systemd en échec : $f.", 'services');
-    }
-    $sites = snapshot('sites')['data'] ?? [];
-    $up = $total = 0;
-    foreach ($sites['sites'] ?? [] as $s) {
-        if (!isset($s['code'])) {
-            continue;
-        }
-        $total++;
-        if ($s['code'] >= 200 && $s['code'] < 500) {
-            $up++;
-        } else {
-            $add('crit', "Site {$s['name']} injoignable (HTTP {$s['code']}).", 'sites');
-        }
-    }
-    foreach (snapshot('certs')['data']['certs'] ?? [] as $c) {
-        if ($c['days'] < 15) {
-            $add($c['days'] < 5 ? 'crit' : 'warn', "Certificat {$c['name']} expire dans {$c['days']} j.", 'certs');
-        }
-    }
-    $sec = snapshot('security')['data'] ?? [];
-    if (!empty($sec['reboot_required'])) {
-        $add('info', 'Redémarrage requis (nouveau noyau ' . ($sec['kernel_latest'] ?? '?') . ').', 'security');
-    }
-    $panel = snapshot('panel')['data'] ?? [];
-    if (!empty($panel['behind'])) {
-        $n = count($panel['behind']);
-        $add('info', "Mise à jour de Hostkeep disponible ($n nouveauté" . ($n > 1 ? 's' : '') . ').', 'panel');
-    }
-    $upd = snapshot('updates')['data'] ?? [];
-    if (!empty($upd['security_count'])) {
-        $add('warn', "{$upd['security_count']} mise(s) à jour de sécurité en attente.", 'updates');
-    }
-    $scan = snapshot('secscan')['data'] ?? null;
-    if ($scan) {
-        $crit = count(array_filter($scan['findings'], fn($f) => $f['severity'] === 'crit'));
-        if ($crit) {
-            $add('crit', "Audit de sécurité : $crit problème(s) critique(s) (fichiers sensibles exposés…).", 'security');
-        }
-    }
-    $bk = snapshot('backups')['data']['days'][0]['day'] ?? null;
-    if ($bk === null || $bk < date('Y-m-d', time() - 2 * 86400)) {
-        $add('warn', 'Aucune sauvegarde des bases depuis plus de 2 jours.', 'backups');
-    }
-    foreach (snapshot('pm2')['data']['apps'] ?? [] as $a) {
-        if ($a['status'] !== 'online') {
-            $add('crit', "Appli PM2 {$a['name']} : {$a['status']}.", 'cron');
-        }
-    }
-
-    return [
-        'host' => gethostname(),
-        'metric' => $last,
-        'sites_up' => $up,
-        'sites_total' => $total,
-        'alerts' => $alerts,
-        'os' => (static function (): string {
-            $o = @parse_ini_file('/etc/os-release');
-            return (string) ($o['PRETTY_NAME'] ?? 'Linux');
-        })(),
-        'kernel' => php_uname('r'),
-    ];
 }

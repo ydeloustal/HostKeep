@@ -15,7 +15,10 @@ if (PHP_SAPI !== 'cli' || posix_geteuid() !== 0) {
     fwrite(STDERR, "À lancer en root, en ligne de commande.\n");
     exit(1);
 }
-require __DIR__ . '/../src/env.php';
+require __DIR__ . '/../src/bootstrap.php';
+require __DIR__ . '/../src/settings.php';
+require __DIR__ . '/../src/mailer.php';
+require __DIR__ . '/../src/overview.php';
 require __DIR__ . '/../src/live.php';
 require __DIR__ . '/../src/collect_extra.php';
 
@@ -26,15 +29,15 @@ putenv('PM2_HOME=/root/.pm2');
 putenv('LC_ALL=C');
 
 $mode = $argv[1] ?? 'minute';
-$modes = ['minute' => ['metrics', 'services', 'processes'],
-    '5min' => ['sites', 'certs', 'pm2', 'security', 'databases', 'traffic', 'perf'],
+$modes = ['minute' => ['metrics', 'services', 'processes', 'schedule'],
+    '5min' => ['sites', 'certs', 'pm2', 'security', 'databases', 'traffic', 'perf', 'notify'],
     'hourly' => ['storage', 'cron', 'updates', 'logkeys', 'backups', 'panel'],
     'purge' => ['purge'],
     'backup' => ['backup', 'backups'],     // nightly database dumps
     'scan' => ['scan'],                    // nightly security scan of the sites
     'updates' => ['updates'],              // after apt update / upgrade
     'backup-list' => ['backups']];         // after a restore
-$modes['all'] = array_merge($modes['minute'], $modes['5min'], $modes['hourly']);
+$modes['all'] = array_diff(array_merge($modes['minute'], $modes['5min'], $modes['hourly']), ['notify']);
 if (!isset($modes[$mode])) {
     fwrite(STDERR, "Mode inconnu : $mode\n");
     exit(1);
@@ -45,9 +48,7 @@ if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
     exit(0);   // previous run still going
 }
 
-$pdo = new PDO('mysql:unix_socket=/run/mysqld/mysqld.sock;dbname=hostkeep;charset=utf8mb4', 'root', '', [
-    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-]);
+$pdo = db();   // root, through the unix socket
 
 function sh(string $cmd): string
 {
@@ -407,6 +408,8 @@ function c_purge(): void
     $pdo->exec('DELETE FROM site_checks WHERE ts < ' . ($now - 31 * 86400));
     $pdo->exec('DELETE FROM login_attempts WHERE ts < ' . ($now - 31 * 86400));
     $pdo->exec('DELETE FROM audit_log WHERE ts < ' . ($now - 366 * 86400));
+    $pdo->exec('DELETE FROM user_sessions WHERE last_seen < ' . ($now - 86400 - 60 * max(5, setting_int('security.session_timeout'))));
+    $pdo->exec('DELETE FROM password_resets WHERE expires_at < ' . $now);
     $day = date('Y-m-d', $now - 31 * 86400);
     foreach (['traffic_daily', 'traffic_visitors', 'traffic_top'] as $t) {
         $pdo->exec("DELETE FROM $t WHERE day < '$day'");
@@ -415,6 +418,71 @@ function c_purge(): void
         if (filemtime($f) < $now - 7 * 86400) {
             @unlink($f);
         }
+    }
+}
+
+/** Applies the backup time chosen in the settings to the systemd timer (drop-in), when it changed. */
+function c_schedule(): void
+{
+    $t = setting('backup.time');
+    if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/D', $t) || !is_file('/etc/systemd/system/hostkeep-backup.timer')) {
+        return;
+    }
+    $dir = '/etc/systemd/system/hostkeep-backup.timer.d';
+    $file = "$dir/schedule.conf";
+    $want = "# Written by Hostkeep from Administration › Paramètres › Sauvegardes.\n[Timer]\nOnCalendar=\nOnCalendar=*-*-* $t:00\n";
+    if (@file_get_contents($file) === $want) {
+        return;
+    }
+    @mkdir($dir, 0755, true);
+    file_put_contents($file, $want);
+    sh('systemctl daemon-reload && systemctl restart hostkeep-backup.timer');
+}
+
+/** E-mails the alerts that appeared since the last run (Administration › Paramètres › Alertes par e-mail). */
+function c_notify(): void
+{
+    $stateFile = '/var/lib/hostkeep/notified.json';
+    if (!setting_bool('notify.enabled') || !mail_configured()) {
+        @unlink($stateFile);
+        return;
+    }
+    $levels = setting('notify.level') === 'warn' ? ['crit', 'warn'] : ['crit'];
+    $now = [];
+    foreach (overview()['alerts'] as $a) {
+        if (in_array($a['level'], $levels, true)) {
+            $now[md5($a['level'] . $a['text'])] = $a;
+        }
+    }
+    $before = json_decode((string) @file_get_contents($stateFile), true) ?: [];
+    $new = array_diff_key($now, $before);
+    $gone = array_diff_key($before, $now);
+    file_put_contents($stateFile, json_encode($now, JSON_UNESCAPED_UNICODE));
+    if (!$new && !$gone) {
+        return;
+    }
+    $to = array_filter(array_map('trim', explode(',', setting('notify.recipients'))));
+    if (!$to) {
+        $to = db()->query("SELECT email FROM users WHERE active = 1 AND email IS NOT NULL AND role IN ('superadmin', 'admin')")->fetchAll(PDO::FETCH_COLUMN);
+    }
+    if (!$to) {
+        return;
+    }
+    $label = ['crit' => 'CRITIQUE', 'warn' => 'ATTENTION'];
+    $body = 'Serveur ' . gethostname() . ' — ' . date('d/m/Y H:i') . "\n\n";
+    if ($new) {
+        $body .= "Nouvelles alertes :\n" . implode("\n", array_map(fn($a) => "  [{$label[$a['level']]}] {$a['text']}", $new)) . "\n\n";
+    }
+    if ($gone) {
+        $body .= "Résolues :\n" . implode("\n", array_map(fn($a) => "  ✓ {$a['text']}", $gone)) . "\n\n";
+    }
+    $body .= 'Ouvrir le panel : ' . base_url() . "/\n";
+    $subject = $new ? count($new) . ' nouvelle(s) alerte(s) sur ' . gethostname() : 'Alertes résolues sur ' . gethostname();
+    try {
+        send_mail(array_values($to), $subject, $body);
+    } catch (Throwable $e) {
+        file_put_contents($stateFile, json_encode($before, JSON_UNESCAPED_UNICODE));   // retry at the next run
+        throw $e;
     }
 }
 

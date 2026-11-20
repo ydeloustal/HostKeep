@@ -1,19 +1,32 @@
 'use strict';
-/* Login page: show / hide the password, caps-lock warning, no double submit. Works without it too. */
-const pass = document.getElementById('pass'), toggle = document.getElementById('pw-toggle'), caps = document.getElementById('caps');
-toggle.hidden = false;
-toggle.onclick = () => {
-  const show = pass.type === 'password';
-  pass.type = show ? 'text' : 'password';
-  toggle.textContent = show ? 'Masquer' : 'Afficher';
-  toggle.setAttribute('aria-pressed', String(show));
-  pass.focus();
-};
-pass.addEventListener('keyup', e => { caps.hidden = !e.getModifierState?.('CapsLock'); });
-pass.addEventListener('blur', () => { caps.hidden = true; });
-document.querySelector('form').addEventListener('submit', () => {
-  const btn = document.getElementById('login-submit');
-  pass.type = 'password';   // never leave the clear text for the password manager prompt
-  btn.textContent = 'Connexion…';
-  setTimeout(() => { btn.disabled = true; });   // after the submit, so the form is still sent
+/* Login / password pages: show / hide passwords, caps-lock warning, no double submit. Works without it too. */
+const caps = document.getElementById('caps');
+document.querySelectorAll('.pw-field').forEach(field => {
+  const input = field.querySelector('input'), toggle = field.querySelector('button');
+  if (!input || !toggle) return;
+  toggle.hidden = false;
+  toggle.onclick = () => {
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    toggle.textContent = show ? 'Masquer' : 'Afficher';
+    toggle.setAttribute('aria-pressed', String(show));
+    input.focus();
+  };
+  if (caps) {
+    input.addEventListener('keyup', e => { caps.hidden = !e.getModifierState?.('CapsLock'); });
+    input.addEventListener('blur', () => { caps.hidden = true; });
+  }
 });
+document.querySelectorAll('form').forEach(form => form.addEventListener('submit', () => {
+  const btn = form.querySelector('button[type="submit"]');
+  form.querySelectorAll('.pw-field input').forEach(i => { i.type = 'password'; });   // never leave clear text for the password manager prompt
+  if (!btn) return;
+  btn.textContent = btn.dataset.busy || 'Envoi…';
+  setTimeout(() => { btn.disabled = true; });   // after the submit, so the form is still sent
+}));
+/* password.php: live check that both entries match. */
+const p1 = document.getElementById('new1'), p2 = document.getElementById('new2'), hint = document.getElementById('match');
+if (p1 && p2 && hint) {
+  const check = () => { hint.hidden = !p2.value || p1.value === p2.value; };
+  p1.addEventListener('input', check); p2.addEventListener('input', check);
+}

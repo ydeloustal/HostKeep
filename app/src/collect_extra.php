@@ -4,7 +4,6 @@ declare(strict_types=1);
 /** Collector tasks for backups, traffic, performance and the security scan (run as root by bin/collect.php). */
 
 const BACKUP_DIR = '/var/backups/hostkeep';
-const BACKUP_KEEP_DAYS = 7;
 const TRAFFIC_LOG = '/var/log/apache2/hostkeep-traffic.log';
 const TRAFFIC_STATE = '/var/lib/hostkeep/traffic.json';
 const BOT_RE = '/bot|crawl|spider|slurp|curl|wget|python|go-http|httpclient|scan|nmap|zgrab|masscan|libwww|okhttp|java\/|headless|monitor|uptime|axios|node-fetch|preview|facebookexternalhit|hostkeep-/i';
@@ -12,9 +11,18 @@ const STATIC_RE = '/\.(css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf
 
 /* ---------- database backups ---------- */
 
+function backup_keep_days(): int
+{
+    return max(1, setting_int('backup.keep_days'));
+}
+
 function c_backup(): void
 {
-    global $pdo;
+    global $pdo, $argv;
+    if (!setting_bool('backup.enabled') && !in_array('--force', $argv, true)) {
+        echo "Sauvegarde automatique désactivée (Administration › Paramètres › Sauvegardes).\n";
+        return;
+    }
     $dir = BACKUP_DIR . '/' . date('Y-m-d');
     if (!is_dir($dir)) {
         mkdir($dir, 0750, true);
@@ -41,14 +49,14 @@ function c_backup(): void
             $errors[] = "$db : " . implode(' ', $out);
         }
     }
-    $limit = date('Y-m-d', time() - BACKUP_KEEP_DAYS * 86400);
+    $limit = date('Y-m-d', time() - backup_keep_days() * 86400);
     foreach (glob(BACKUP_DIR . '/????-??-??', GLOB_ONLYDIR) ?: [] as $d) {
         if (basename($d) < $limit) {
             exec('rm -rf -- ' . escapeshellarg($d));
         }
     }
     foreach (glob(BACKUP_DIR . '/pre-restore/*.sql.gz') ?: [] as $f) {
-        if (filemtime($f) < time() - BACKUP_KEEP_DAYS * 86400) {
+        if (filemtime($f) < time() - backup_keep_days() * 86400) {
             unlink($f);
         }
     }
@@ -76,7 +84,7 @@ function c_backups(): void
         $pre[] = ['file' => basename($f), 'size' => filesize($f), 'mtime' => filemtime($f)];
         $total += filesize($f);
     }
-    save('backups', ['days' => $days, 'pre' => $pre, 'total' => $total, 'keep' => BACKUP_KEEP_DAYS, 'dir' => BACKUP_DIR]);
+    save('backups', ['days' => $days, 'pre' => $pre, 'total' => $total, 'keep' => backup_keep_days(), 'enabled' => setting_bool('backup.enabled'), 'time' => setting('backup.time'), 'dir' => BACKUP_DIR]);
 }
 
 /* ---------- traffic (incremental parse of the GlobalLog) ---------- */
