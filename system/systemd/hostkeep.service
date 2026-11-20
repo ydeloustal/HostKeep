@@ -1,0 +1,26 @@
+# Hostkeep panel: its own PHP-FPM master (workers run as user "hostkeep").
+# Restarted automatically on failure. Logs: journalctl -u hostkeep, /var/log/hostkeep/.
+# __PHP_VERSION__ is replaced by install.sh.
+[Unit]
+Description=Hostkeep : panel d'administration (PHP-FPM __PHP_VERSION__)
+Documentation=https://github.com/ydeloustal/HostKeep
+After=network.target mariadb.service mysql.service
+Wants=mariadb.service
+
+[Service]
+Type=notify
+ExecStartPre=/usr/sbin/php-fpm__PHP_VERSION__ --test --fpm-config /etc/hostkeep/php-fpm.conf
+ExecStart=/usr/sbin/php-fpm__PHP_VERSION__ --nodaemonize --fpm-config /etc/hostkeep/php-fpm.conf
+ExecReload=/bin/kill -USR2 $MAINPID
+Restart=always
+RestartSec=3
+RuntimeDirectory=hostkeep
+RuntimeDirectoryMode=0755
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target
