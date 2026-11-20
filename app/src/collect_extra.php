@@ -4,7 +4,6 @@ declare(strict_types=1);
 /** Collector tasks for backups, traffic, performance and the security scan (run as root by bin/collect.php). */
 
 const BACKUP_DIR = '/var/backups/hostkeep';
-const TRAFFIC_LOG = '/var/log/apache2/hostkeep-traffic.log';
 const TRAFFIC_STATE = '/var/lib/hostkeep/traffic.json';
 const BOT_RE = '/bot|crawl|spider|slurp|curl|wget|python|go-http|httpclient|scan|nmap|zgrab|masscan|libwww|okhttp|java\/|headless|monitor|uptime|axios|node-fetch|preview|facebookexternalhit|hostkeep-/i';
 const STATIC_RE = '/\.(css|js|mjs|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|otf|mp4|webm|mp3|webmanifest|json|txt|xml)$/i';
@@ -92,31 +91,39 @@ function c_backups(): void
 function c_traffic(): void
 {
     global $pdo;
-    if (!is_file(TRAFFIC_LOG)) {
+    $logs = traffic_logs();
+    if (!$logs) {
         return;
     }
     clearstatcache();
-    $st = is_file(TRAFFIC_STATE) ? (json_decode((string) file_get_contents(TRAFFIC_STATE), true) ?: []) : [];
-    $ino = fileinode(TRAFFIC_LOG);
-    $off = (int) ($st['off'] ?? 0);
+    $state = is_file(TRAFFIC_STATE) ? (json_decode((string) file_get_contents(TRAFFIC_STATE), true) ?: []) : [];
+    if (isset($state['ino'])) {   // Hostkeep ≤ 2.1: one Apache log, state not keyed by file
+        $state = ['/var/log/apache2/hostkeep-traffic.log' => $state];
+    }
     $chunks = [];
-    if (!empty($st['ino']) && $st['ino'] !== $ino) {           // rotated: finish the previous file first
-        $old = TRAFFIC_LOG . '.1';
-        if (is_file($old) && fileinode($old) === $st['ino']) {
-            $chunks[] = [$old, $off];
+    $newState = [];
+    foreach ($logs as $log) {
+        $st = $state[$log] ?? [];
+        $ino = fileinode($log);
+        $off = (int) ($st['off'] ?? 0);
+        if (!empty($st['ino']) && $st['ino'] !== $ino) {       // rotated: finish the previous file first
+            $old = $log . '.1';
+            if (is_file($old) && fileinode($old) === $st['ino']) {
+                $chunks[] = [$old, $off, null];
+            }
+            $off = 0;
         }
-        $off = 0;
+        if (filesize($log) < $off) {
+            $off = 0;
+        }
+        $chunks[] = [$log, $off, $log];
+        $newState[$log] = ['ino' => $ino, 'off' => $off];
     }
-    if (filesize(TRAFFIC_LOG) < $off) {
-        $off = 0;
-    }
-    $chunks[] = [TRAFFIC_LOG, $off];
 
     $daily = $visitors = $top = [];
-    $newOff = $off;
     $tz = new DateTimeZone(date_default_timezone_get());
     $dayCache = [];
-    foreach ($chunks as [$file, $from]) {
+    foreach ($chunks as [$file, $from, $current]) {
         $fh = fopen($file, 'r');
         fseek($fh, $from);
         $pos = $from;
@@ -129,7 +136,7 @@ function c_traffic(): void
                 continue;
             }
             [, $host, $ip, $time, $req, $status, $bytes, $ref, $ua] = $m;
-            $host = strtolower($host);
+            $host = strtolower(preg_replace('/:\d+$/', '', $host));   // "$host:$port" formats
             $key = substr($time, 0, 11) . substr($time, -5);
             $day = $dayCache[$key] ??= (DateTime::createFromFormat('d/M/Y:H:i:s O', $time) ?: new DateTime())->setTimezone($tz)->format('Y-m-d');
             $status = (int) $status;
@@ -168,8 +175,8 @@ function c_traffic(): void
             }
         }
         fclose($fh);
-        if ($file === TRAFFIC_LOG) {
-            $newOff = $pos;
+        if ($current !== null) {
+            $newState[$current]['off'] = $pos;
         }
     }
 
@@ -201,7 +208,7 @@ function c_traffic(): void
         }
     }
     $pdo->commit();
-    file_put_contents(TRAFFIC_STATE, json_encode(['ino' => $ino, 'off' => $newOff]));
+    file_put_contents(TRAFFIC_STATE, json_encode($newState));
 }
 
 /* ---------- performance: memory per component, PHP pools, slow queries ---------- */
@@ -223,6 +230,10 @@ function c_perf(): void
             $g = 'PHP-FPM';
         } elseif ($comm === 'apache2') {
             $g = 'Apache';
+        } elseif ($comm === 'nginx') {
+            $g = 'Nginx';
+        } elseif ($comm === 'caddy') {
+            $g = 'Caddy';
         } elseif (in_array($comm, ['mariadbd', 'mysqld'], true)) {
             $g = 'MariaDB';
         } elseif ($comm === 'node' || str_contains($args, 'PM2')) {
@@ -246,10 +257,9 @@ function c_perf(): void
 
     // pool settings and the sites each pool serves
     $sockets = [];
-    foreach (glob('/etc/apache2/sites-enabled/*.conf') ?: [] as $f) {
-        $txt = (string) @file_get_contents($f);
-        if (preg_match('#proxy:unix:([^|"]+)#', $txt, $s) && preg_match('/ServerName\s+(\S+)/i', $txt, $n)) {
-            $sockets[$s[1]][] = $n[1];
+    foreach (snapshot_data('sites')['sites'] ?? [] as $site) {   // both servers: sockets found in the vhosts
+        foreach ($site['sockets'] ?? [] as $sock) {
+            $sockets[$sock][] = $site['name'];
         }
     }
     $fpmLog = (string) @file_get_contents('/var/log/php' . php_version() . '-fpm.log');
@@ -397,6 +407,10 @@ function c_scan(): void
     }
     if (preg_match('/^permitrootlogin (yes|without-password|prohibit-password)/m', $sshd, $m) && $m[1] === 'yes') {
         $add('warn', 'serveur', 'Connexion SSH root par mot de passe autorisée');
+    }
+    $ngx = implode("\n", nginx_dump());
+    if ($ngx !== '' && !preg_match('/^\s*server_tokens\s+off\s*;/m', $ngx)) {
+        $add('info', 'serveur', 'Nginx affiche sa version (server_tokens)', 'Ajoute « server_tokens off; » dans le bloc http de /etc/nginx/nginx.conf.');
     }
     $sec = (string) @file_get_contents('/etc/apache2/conf-enabled/security.conf');
     if (preg_match('/^\s*ServerTokens\s+(OS|Full|Minor|Minimal|Major)/mi', $sec, $m)) {

@@ -20,6 +20,7 @@ require __DIR__ . '/../src/settings.php';
 require __DIR__ . '/../src/mailer.php';
 require __DIR__ . '/../src/overview.php';
 require __DIR__ . '/../src/live.php';
+require __DIR__ . '/../src/webservers.php';
 require __DIR__ . '/../src/collect_extra.php';
 
 const STATE = '/var/lib/hostkeep/state.json';
@@ -152,60 +153,15 @@ function cert_end(string $file): ?int
     return $cache[$file];
 }
 
-function vhost_block(string $file, int $line): array
-{
-    $l = @file($file) ?: [];
-    $r = ['docroot' => null, 'cert' => null];
-    for ($i = max(0, $line - 1), $n = count($l); $i < $n; $i++) {
-        if (preg_match('#^\s*</VirtualHost#i', $l[$i])) {
-            break;
-        }
-        if (preg_match('/^\s*DocumentRoot\s+"?([^"\s]+)/i', $l[$i], $x)) {
-            $r['docroot'] = $x[1];
-        }
-        if (preg_match('/^\s*SSLCertificateFile\s+"?([^"\s]+)/i', $l[$i], $x)) {
-            $r['cert'] = $x[1];
-        }
-    }
-    return $r;
-}
-
 function c_sites(): void
 {
     global $pdo;
-    $sites = [];
-    foreach (lines(sh('apache2ctl -S')) as $l) {
-        if (preg_match('/port (\d+) namevhost (\S+) \((.+?):(\d+)\)/', $l, $x)) {
-            [, $port, $name, $file, $line] = $x;
-            unset($last);   // break the reference: assigning null would overwrite the previous site
-            if (preg_match('/^(\d+\.){3}\d+$|^localhost$|:/', $name)) {
-                continue;
-            }
-            $s = &$sites[$name];
-            $s['name'] = $name;
-            $s['ports'][] = (int) $port;
-            $conf = basename((string) (realpath($file) ?: $file), '.conf');
-            $s['confs'][] = $conf;
-            $b = vhost_block($file, (int) $line);
-            $s['docroot'] ??= $b['docroot'];
-            if ($b['cert']) {
-                $s['cert'] = $b['cert'];
-            }
-            $s['aliases'] ??= [];
-            $last = &$s;
-            unset($s);
-        } elseif (isset($last) && preg_match('/^\s+alias (\S+)/', $l, $x) && !preg_match('/^(\d+\.){3}\d+$|^localhost$/', $x[1])) {
-            $last['aliases'][] = $x[1];
-        }
-    }
-    unset($last);
+    $sites = web_vhosts();
     $now = time();
     $ins = $pdo->prepare('INSERT INTO site_checks (ts, host, code, ms) VALUES (?, ?, ?, ?)');
     foreach ($sites as &$s) {
-        $s['confs'] = array_values(array_unique($s['confs']));
-        $s['aliases'] = array_values(array_unique($s['aliases']));
-        $https = in_array(443, $s['ports'], true);
-        $s['url'] = ($https ? 'https://' : 'http://') . $s['name'] . '/';
+        $port = array_values(array_diff($s['ports'], [80, 443]))[0] ?? null;
+        $s['url'] = $s['https'] ? "https://{$s['name']}/" : 'http://' . $s['name'] . (!in_array(80, $s['ports'], true) && $port ? ":$port" : '') . '/';
         $o = sh('curl -s -o /dev/null --max-time 8 -w "%{http_code} %{time_total}" ' . escapeshellarg($s['url']));
         [$code, $t] = explode(' ', trim($o) ?: '0 0') + [1 => '0'];
         $s['code'] = (int) $code;
@@ -216,11 +172,18 @@ function c_sites(): void
         $ins->execute([$now, $s['name'], $s['code'], $s['ms']]);
     }
     unset($s);
-    ksort($sites);
-
-    $enabled = array_map(fn($f) => basename((string) (realpath($f) ?: $f), '.conf'), glob('/etc/apache2/sites-enabled/*.conf') ?: []);
-    $available = array_map(fn($f) => basename($f, '.conf'), glob('/etc/apache2/sites-available/*.conf') ?: []);
-    save('sites', ['sites' => array_values($sites), 'disabled' => array_values(array_diff($available, $enabled)), 'self' => 'hostkeep']);
+    // configs that exist but are not enabled, per server (to re-enable them from the panel)
+    $disabled = [];
+    foreach (['apache' => apache_site_files(), 'nginx' => nginx_site_files()] as $server => $f) {
+        foreach (array_diff($f['available'], $f['enabled']) as $conf) {
+            if (!preg_match('/\.(bak|old|orig|dpkg-\w+|save|swp)$|~$/', $conf)) {
+                $disabled[] = ['server' => $server, 'conf' => $conf];
+            }
+        }
+    }
+    save('sites', ['sites' => array_values($sites), 'disabled' => $disabled, 'self' => 'hostkeep',
+        'servers' => array_keys(array_filter(['apache' => trim(sh('systemctl is-active apache2')) === 'active', 'nginx' => nginx_dump() !== []])),
+        'untracked' => nginx_untracked_sites(), 'traffic_logs' => traffic_logs()]);
 }
 
 function c_certs(): void
@@ -386,10 +349,12 @@ function c_logkeys(): void
     $keys = [['key' => 'journal-errors', 'label' => 'systemd — erreurs récentes', 'size' => null],
         ['key' => 'fail2ban', 'label' => 'fail2ban', 'size' => @filesize('/var/log/fail2ban.log') ?: null],
         ['key' => 'hostkeep-auth', 'label' => 'Hostkeep — échecs de connexion', 'size' => @filesize('/var/log/hostkeep/auth.log') ?: null]];
-    foreach (glob('/var/log/apache2/*.log') ?: [] as $f) {
-        $b = basename($f);
-        if (preg_match('/^[A-Za-z0-9._-]+$/', $b)) {
-            $keys[] = ['key' => "apache:$b", 'label' => "Apache — $b", 'size' => filesize($f)];
+    foreach (['apache' => 'Apache', 'nginx' => 'Nginx'] as $srv => $label) {
+        foreach (glob("/var/log/$srv*/*.log") ?: [] as $f) {
+            $b = basename($f);
+            if (preg_match('/^[A-Za-z0-9._-]+$/', $b) && dirname($f) === ($srv === 'apache' ? '/var/log/apache2' : '/var/log/nginx')) {
+                $keys[] = ['key' => "$srv:$b", 'label' => "$label — $b", 'size' => filesize($f)];
+            }
         }
     }
     foreach (json_decode(sh('pm2 jlist'), true) ?: [] as $p) {
