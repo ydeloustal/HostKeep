@@ -5,6 +5,16 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.3.0] — 2026-11-21
+
+### Ajouté
+- **Redémarrer le serveur** depuis *Sécurité › Audit* (rôle administrateur, confirmation) : régénère le menu GRUB s'il ne propose pas le dernier noyau, puis redémarre 10 s plus tard.
+- Carte *Redémarrage* : heure du dernier démarrage, et diagnostic quand le serveur a redémarré mais tourne toujours sur l'ancien noyau (GRUB non régénéré, `GRUB_DEFAULT`, noyau imposé par l'hébergeur).
+
+### Corrigé
+- Juste après un redémarrage, « Redémarrage requis » restait affiché jusqu'à 5 min (données de l'ancien démarrage) : le noyau en cours est désormais lu en direct, et la collecte « 5 min » passe aussi 40 s après le démarrage.
+- « Redémarrage requis » ne compare plus que des noyaux de la même variante (`amd64` / `cloud-amd64`).
+
 ## [2.2.1] — 2026-11-20
 
 ### Corrigé

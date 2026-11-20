@@ -10,7 +10,7 @@ const can = perm => ME.perms.includes(perm);
 const VERB_PERMS = {
   'collect-now': 'actions.routine', 'security-scan': 'actions.routine', 'apt-update': 'actions.routine', 'backup-now': 'actions.routine', 'certbot:dry-run': 'actions.routine',
   service: 'actions.services', 'pm2-restart': 'actions.services', 'f2b-unban': 'actions.services',
-  site: 'actions.system', 'certbot:renew': 'actions.system', 'apt-clean': 'actions.system', 'journal-vacuum': 'actions.system', 'apt-upgrade': 'actions.system', 'backup-restore': 'actions.system',
+  site: 'actions.system', 'certbot:renew': 'actions.system', 'apt-clean': 'actions.system', 'journal-vacuum': 'actions.system', 'apt-upgrade': 'actions.system', 'backup-restore': 'actions.system', reboot: 'actions.system',
   'self-update': 'panel.update', 'self-rollback': 'panel.update', 'web-domain': 'panel.update',
 };
 const canVerb = (verb, args = []) => can(VERB_PERMS[`${verb}:${args[0] ?? ''}`] || VERB_PERMS[verb] || 'none');
@@ -597,19 +597,30 @@ B.audit = async () => {
   const d = s.data || {}, scan = sc.data;
   const counts = { crit: 0, warn: 0, info: 0 };
   (scan?.findings || []).forEach(f => counts[f.severity]++);
+  const newKernel = d.kernel_latest && d.kernel_latest !== d.kernel_running;
   return {
-    actions: actionBtn('Lancer le scan', 'security-scan', []),
+    actions: [
+      actionBtn('Redémarrer le serveur', 'reboot', [], {
+        cls: d.reboot_required ? 'danger' : '',
+        confirm: `Redémarrer le serveur maintenant ?${newKernel ? ` Il doit démarrer sur le noyau ${d.kernel_latest}.` : ''} Tous les sites, services et ce panel seront coupés 1 à 2 minutes.`,
+      }),
+      actionBtn('Lancer le scan', 'security-scan', [])],
     body: [
       stats(
         stat('Critiques', scan ? counts.crit : '–', scan ? `scan ${ago(scan.ran)}` : 'jamais lancé', undefined, counts.crit ? 'bad' : ''),
         stat('À corriger', scan ? counts.warn : '–', `${counts.info} conseil(s)`),
-        stat('Redémarrage', d.reboot_required ? 'requis' : 'non requis', `noyau ${d.kernel_running || '?'}${d.reboot_required ? ` → ${d.kernel_latest}` : ''}`),
+        stat('Redémarrage', d.reboot_stuck ? 'bloqué' : d.reboot_required ? 'requis' : 'non requis',
+          `noyau ${d.kernel_running || '?'}${newKernel ? ` → ${d.kernel_latest}` : ''}${d.booted_at ? ` · démarré ${ago(d.booted_at)}` : ''}`,
+          undefined, d.reboot_stuck ? 'bad' : ''),
         stat('IP bannies', (d.jails || []).reduce((n, j) => n + j.banned_now, 0), `${(d.jails || []).reduce((n, j) => n + j.banned_total, 0)} au total`)),
+      d.reboot_hint ? note(d.reboot_hint) : null,
+      d.since_reboot ? note('Le serveur vient de redémarrer : le reste de cette page sera à jour au prochain passage du collecteur (moins de 5 min).') : null,
       card('Constats', [
         scan ? table(['Gravité', 'Site', 'Constat', 'Détail'], scan.findings.map(f => [badge(...SEV[f.severity]), el('strong', {}, f.site), f.title, el('span', { class: 'mono small' }, f.detail)]), 'Aucun problème trouvé.')
           : emptyState('Pas encore de scan (chaque nuit à 4 h 20).'),
         note('Cherche fichiers sensibles exposés (.env, .git, dumps…), dossiers listables, en-têtes, ports et config SSH/Apache. Lecture seule.'),
       ]),
+      stale(s.updated),
     ],
   };
 };
