@@ -5,6 +5,11 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.0.1] — 2026-11-20
+
+### Corrigé
+- Mise à jour depuis la 1.x : toutes les configurations du serveur web qui utilisaient l'ancien socket PHP-FPM (y compris les snippets écrits à la main) sont basculées sur `hostkeep.service` ; en cas d'échec du test de configuration, rien n'est retiré.
+
 ## [2.0.0] — 2026-11-20
 
 ### Ajouté
