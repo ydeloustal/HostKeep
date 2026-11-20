@@ -356,20 +356,31 @@ cmd_app() {
   step "Première collecte"
   php "$APP/bin/collect.php" all && ok "données collectées"
 }
-# Hostkeep 1.x ran in a pool of the system PHP-FPM: remove it and point the web server to the new socket.
+# Hostkeep 1.x ran in a pool of the system PHP-FPM: point every web config that uses its socket
+# (vhosts, but also hand-written snippets) to hostkeep.service, then remove the old pool.
+# If a config test fails, the files are put back and the old pool is kept.
 migrate_legacy_pool() {
-  local PHPV=$1 old=/etc/php/$1/fpm/pool.d/hostkeep.conf f changed=0
+  local PHPV=$1 old=/etc/php/$1/fpm/pool.d/hostkeep.conf f files=() bk=/var/lib/hostkeep/pre-2.0-web
   [[ -e $old ]] || return 0
-  for f in /etc/apache2/sites-available/hostkeep-le-ssl.conf /etc/apache2/sites-available/hostkeep.conf /etc/nginx/sites-available/hostkeep.conf; do
-    if [[ -f $f ]] && grep -q 'fpm-hostkeep.sock' "$f"; then sed -i "s#/run/php/php[0-9.]*-fpm-hostkeep.sock#$SOCK#g" "$f"; changed=1; fi
+  mapfile -t files < <(grep -rlsE '/run/php/php[0-9.]*-fpm-hostkeep\.sock' /etc/nginx /etc/apache2 /etc/caddy 2>/dev/null || true)
+  mkdir -p "$bk"
+  for f in "${files[@]}"; do
+    cp -a "$f" "$bk/$(echo "$f" | tr / _)"
+    sed -i "s#/run/php/php[0-9.]*-fpm-hostkeep\.sock#$SOCK#g" "$f"
+    ok "socket mis à jour : $f"
   done
-  if ((changed)); then
-    if [[ -e /etc/apache2/sites-enabled/hostkeep-le-ssl.conf ]] && apache2ctl configtest >/dev/null 2>&1; then systemctl reload apache2; fi
-    if [[ -e /etc/nginx/sites-enabled/hostkeep.conf ]] && nginx -t >/dev/null 2>&1; then systemctl reload nginx; fi
+  local failed=0
+  if command -v nginx >/dev/null && systemctl is-active -q nginx; then nginx -t >/dev/null 2>&1 && systemctl reload nginx || failed=1; fi
+  if command -v apache2ctl >/dev/null && systemctl is-active -q apache2; then apache2ctl configtest >/dev/null 2>&1 && systemctl reload apache2 || failed=1; fi
+  if ((failed)); then
+    for f in "${files[@]}"; do cp -a "$bk/$(echo "$f" | tr / _)" "$f"; done
+    systemctl reload nginx 2>/dev/null || true; systemctl reload apache2 2>/dev/null || true
+    warn "test de configuration du serveur web en échec : fichiers remis en place, ancien pool PHP-FPM conservé."
+    return 0
   fi
   rm -f "$old"
   systemctl reload "php$PHPV-fpm" 2>/dev/null || true
-  ok "ancien pool PHP-FPM de Hostkeep 1.x retiré, serveur web basculé sur hostkeep.service"
+  ok "ancien pool PHP-FPM de Hostkeep 1.x retiré (copies des fichiers modifiés : $bk)"
 }
 
 # ---------- web front ----------
