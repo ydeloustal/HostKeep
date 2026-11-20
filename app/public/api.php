@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/mailer.php';
+require __DIR__ . '/../src/notify.php';
 require __DIR__ . '/../src/users.php';
 require __DIR__ . '/../src/live.php';
 require __DIR__ . '/../src/actions.php';
@@ -24,7 +25,7 @@ if ($isPost && !check_csrf()) {
 session_write_close();   // release the session lock: requests run in parallel
 
 const SECTIONS = ['services', 'processes', 'sites', 'certs', 'pm2', 'security', 'databases', 'storage', 'cron', 'updates', 'logkeys',
-    'backups', 'offsite', 'secscan', 'perf', 'panel'];
+    'backups', 'offsite', 'heartbeat', 'secscan', 'perf', 'panel'];
 
 $r = (string) ($_GET['r'] ?? '');
 $in = $isPost ? (json_decode((string) file_get_contents('php://input'), true) ?: []) : [];
@@ -159,6 +160,30 @@ try {
             require_perm($me, settings_schema()[$group]['perm'] ?? 'settings.security');
             $errors = settings_save($group, (array) ($in['values'] ?? []), $me);
             json_out($errors ? ['errors' => $errors] : ['ok' => true, 'groups' => settings_for($me)], $errors ? 422 : 200);
+
+        case 'settings.testnotify':
+            $post();
+            require_perm($me, 'settings.notifications');
+            $channels = array_values(array_diff(notify_channels(), ['mail']));
+            if (!$channels) {
+                json_out(['error' => 'Aucun canal Discord, Telegram ou webhook enregistré (le test des e-mails est dans l\'onglet E-mails).'], 422);
+            }
+            $msg = notify_message([['level' => 'info', 'text' => "Message de test envoyé par {$me['username']} : les alertes arriveront ici.", 'section' => 'overview']], []);
+            $msg['subject'] = 'Test des alertes de ' . panel_name();
+            $msg['payload']['event'] = 'test';
+            $errors = notify_send($msg, $channels);
+            audit('test des canaux d\'alerte : ' . implode(', ', $channels));
+            json_out(['results' => array_map(fn($c) => ['channel' => CHANNEL_LABELS[$c], 'ok' => !isset($errors[$c]), 'error' => $errors[$c] ?? null], $channels)]);
+
+        case 'settings.testping':
+            $post();
+            require_perm($me, 'settings.notifications');
+            if (setting('monitor.ping_url') === '') {
+                json_out(['error' => 'Enregistre d\'abord l\'URL de ping.'], 422);
+            }
+            $res = heartbeat_send(true);
+            audit('test du ping de surveillance externe');
+            json_out($res, $res['ok'] ? 200 : 422);
 
         case 'settings.testmail':
             $post();

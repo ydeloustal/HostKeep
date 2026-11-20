@@ -26,10 +26,18 @@ function settings_schema(): array
             'smtp.from_email' => ['email', '', 'Adresse d\'expédition', '', ['placeholder' => 'hostkeep@example.com']],
             'smtp.from_name' => ['text', 'Hostkeep', 'Nom d\'expéditeur', '', ['max' => 80]],
         ]],
-        'notifications' => ['label' => 'Alertes par e-mail', 'perm' => 'settings.notifications', 'fields' => [
-            'notify.enabled' => ['bool', '0', 'Envoyer les nouvelles alertes par e-mail', 'Vérifié toutes les 5 minutes, un seul e-mail par nouvelle alerte.', []],
-            'notify.level' => ['select', 'crit', 'Niveau minimum', '', ['options' => ['crit' => 'Critiques seulement', 'warn' => 'Critiques et avertissements']]],
-            'notify.recipients' => ['emails', '', 'Destinataires', 'Adresses séparées par des virgules. Vide = tous les Super Admins et Administrateurs actifs ayant un e-mail.', []],
+        'notifications' => ['label' => 'Alertes', 'perm' => 'settings.notifications', 'fields' => [
+            'notify.level' => ['select', 'crit', 'Niveau minimum', 'Vérifié toutes les 5 minutes : un seul message par nouvelle alerte, puis un quand elle est résolue, sur chaque canal configuré ci-dessous.', ['options' => ['crit' => 'Critiques seulement', 'warn' => 'Critiques et avertissements']]],
+            'notify.enabled' => ['bool', '0', 'Par e-mail', 'Nécessite le SMTP (onglet E-mails).', []],
+            'notify.recipients' => ['emails', '', 'Destinataires des e-mails', 'Adresses séparées par des virgules. Vide = tous les Super Admins et Administrateurs actifs ayant un e-mail.', []],
+            'notify.discord_url' => ['password', '', 'Discord : URL du webhook', 'Sur Discord : Paramètres du salon › Intégrations › Webhooks › Nouveau webhook › Copier l\'URL. Stockée chiffrée. Vide = pas de Discord.', ['placeholder' => 'https://discord.com/api/webhooks/…']],
+            'notify.telegram_token' => ['password', '', 'Telegram : jeton du bot', 'Crée un bot avec @BotFather (/newbot), puis écris-lui un message. Stocké chiffré.', ['placeholder' => '123456789:AA…']],
+            'notify.telegram_chat' => ['text', '', 'Telegram : identifiant de la conversation', 'Ton identifiant (donné par @userinfobot), celui d\'un groupe (commence par -) ou @nom_du_canal.', ['max' => 64, 'placeholder' => '123456789']],
+            'notify.webhook_url' => ['password', '', 'Webhook générique (JSON)', 'Reçoit un POST JSON : event, server, panel, url, new[], resolved[], text. Pour n8n, Zapier, Slack (via un relais), ntfy, Gotify… Stocké chiffré.', ['placeholder' => 'https://exemple.com/hook']],
+        ]],
+        'monitor' => ['label' => 'Surveillance externe', 'perm' => 'settings.notifications', 'fields' => [
+            'monitor.kind' => ['select', 'healthchecks', 'Service', '', ['options' => ['healthchecks' => 'Healthchecks.io (ou instance auto-hébergée)', 'kuma' => 'Uptime Kuma (moniteur de type « Push »)', 'generic' => 'Autre (URL appelée quand tout va bien)']]],
+            'monitor.ping_url' => ['password', '', 'URL de ping', 'Appelée chaque minute par le collecteur. Si elle ne l\'est plus (serveur éteint, plus de réseau, collecteur bloqué), c\'est le service qui te prévient. Règle-y une période de 1 minute et une marge de 5 minutes. Stockée chiffrée. Vide = désactivé.', ['placeholder' => 'https://hc-ping.com/…']],
         ]],
         'backups' => ['label' => 'Sauvegardes', 'perm' => 'settings.backups', 'fields' => [
             'backup.enabled' => ['bool', '1', 'Sauvegarde automatique', 'Chaque nuit : un dump compressé de chaque base MariaDB, plus les fichiers si l\'option ci-dessous est cochée.', []],
@@ -243,8 +251,10 @@ function settings_save(string $group, array $in, array $user): array
                 if ($v === '') {
                     continue 2;   // keep the stored one
                 }
-                if (strlen($v) > 500) {
-                    $err = 'Trop long.';
+                if (strlen($v) > 500 || preg_match('/[\x00-\x1F\x7F]/', $v)) {
+                    $err = 'Trop long ou caractères invalides.';
+                } elseif (($re = SECRET_RULES[$key] ?? null) && !preg_match($re[0], $v)) {
+                    $err = $re[1];
                 }
                 break;
             case 'cidrs':
@@ -287,6 +297,14 @@ function settings_save(string $group, array $in, array $user): array
     return [];
 }
 
+/** Secret fields with a known shape (checked before being stored). */
+const SECRET_RULES = [
+    'notify.discord_url' => ['#^https://(discord\.com|discordapp\.com|ptb\.discord\.com|canary\.discord\.com)/api/webhooks/\d+/[A-Za-z0-9_-]+$#D', 'Ce n\'est pas une URL de webhook Discord (https://discord.com/api/webhooks/…).'],
+    'notify.telegram_token' => ['/^\d{5,15}:[A-Za-z0-9_-]{30,64}$/D', 'Ce n\'est pas un jeton de bot Telegram (123456789:AA…).'],
+    'notify.webhook_url' => ['~^https?://[^\s/?#]+[^\s]*$~D', 'Adresse invalide (https://…).'],
+    'monitor.ping_url' => ['~^https?://[^\s/?#]+[^\s]*$~D', 'Adresse invalide (https://…).'],
+];
+
 /** Text fields that end up in rclone.conf or on the rclone command line: strict formats. */
 const OFFSITE_TEXT_RULES = [
     'offsite.s3_endpoint' => ['/^(https?:\/\/)?[A-Za-z0-9.-]{1,180}(:\d{1,5})?\/?$/D', 'Adresse invalide (ex. s3.fr-par.scw.cloud).'],
@@ -296,6 +314,7 @@ const OFFSITE_TEXT_RULES = [
     'offsite.sftp_user' => ['/^[A-Za-z0-9._-]{1,64}$/D', 'Nom d\'utilisateur invalide.'],
     'offsite.path' => ['/^(?!.*\.\.)[A-Za-z0-9._-][A-Za-z0-9._\/-]{0,199}$/D', 'Chemin invalide : lettres, chiffres, « . _ - / », sans « .. ».'],
     'offsite.bwlimit' => ['/^\d{1,6}[KMGkmg]?$/D', 'Ex. 2M ou 500K.'],
+    'notify.telegram_chat' => ['/^(-?\d{1,20}|@[A-Za-z0-9_]{5,32})$/D', 'Un nombre (ex. 123456789 ou -100123…) ou @nom_du_canal.'],
 ];
 
 function secrettext_problem(string $key, string $v): ?string

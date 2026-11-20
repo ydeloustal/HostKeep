@@ -19,6 +19,7 @@ if (PHP_SAPI !== 'cli' || posix_geteuid() !== 0) {
 require __DIR__ . '/../src/bootstrap.php';
 require __DIR__ . '/../src/settings.php';
 require __DIR__ . '/../src/mailer.php';
+require __DIR__ . '/../src/notify.php';
 require __DIR__ . '/../src/overview.php';
 require __DIR__ . '/../src/live.php';
 require __DIR__ . '/../src/webservers.php';
@@ -32,7 +33,7 @@ putenv('PM2_HOME=/root/.pm2');
 putenv('LC_ALL=C');
 
 $mode = $argv[1] ?? 'minute';
-$modes = ['minute' => ['metrics', 'services', 'processes', 'schedule'],
+$modes = ['minute' => ['metrics', 'services', 'processes', 'schedule', 'heartbeat'],   // heartbeat last: it reports the others
     '5min' => ['sites', 'certs', 'pm2', 'security', 'databases', 'traffic', 'perf', 'notify'],
     'hourly' => ['storage', 'cron', 'updates', 'logkeys', 'offsite', 'backups', 'panel'],
     'purge' => ['purge'],
@@ -43,7 +44,7 @@ $modes = ['minute' => ['metrics', 'services', 'processes', 'schedule'],
     'scan' => ['scan'],                    // nightly security scan of the sites
     'updates' => ['updates'],              // after apt update / upgrade
     'backup-list' => ['backups']];         // after a restore
-$modes['all'] = array_diff(array_merge($modes['minute'], $modes['5min'], $modes['hourly']), ['notify']);
+$modes['all'] = array_diff(array_merge($modes['minute'], $modes['5min'], $modes['hourly']), ['notify', 'heartbeat']);
 if (!isset($modes[$mode])) {
     fwrite(STDERR, "Mode inconnu : $mode\n");
     exit(1);
@@ -432,11 +433,12 @@ function c_schedule(): void
     sh('systemctl daemon-reload && systemctl restart hostkeep-backup.timer');
 }
 
-/** E-mails the alerts that appeared since the last run (Administration › Paramètres › Alertes par e-mail). */
+/** Sends the alerts that appeared or cleared since the last run to every channel (Administration › Paramètres › Alertes). */
 function c_notify(): void
 {
     $stateFile = '/var/lib/hostkeep/notified.json';
-    if (!setting_bool('notify.enabled') || !mail_configured()) {
+    $channels = notify_channels();
+    if (!$channels) {
         @unlink($stateFile);
         return;
     }
@@ -450,32 +452,34 @@ function c_notify(): void
     $before = json_decode((string) @file_get_contents($stateFile), true) ?: [];
     $new = array_diff_key($now, $before);
     $gone = array_diff_key($before, $now);
-    file_put_contents($stateFile, json_encode($now, JSON_UNESCAPED_UNICODE));
     if (!$new && !$gone) {
         return;
     }
-    $to = array_filter(array_map('trim', explode(',', setting('notify.recipients'))));
-    if (!$to) {
-        $to = db()->query("SELECT email FROM users WHERE active = 1 AND email IS NOT NULL AND role IN ('superadmin', 'admin')")->fetchAll(PDO::FETCH_COLUMN);
+    $errors = notify_send(notify_message($new, $gone), $channels);
+    if (count($errors) === count($channels)) {
+        throw new RuntimeException('alertes non envoyées, nouvel essai dans 5 min : ' . implode(' | ', array_map(fn($c, $e) => CHANNEL_LABELS[$c] . " : $e", array_keys($errors), $errors)));
     }
-    if (!$to) {
+    file_put_contents($stateFile, json_encode($now, JSON_UNESCAPED_UNICODE));   // sent on at least one channel: not again
+    if ($errors) {
+        throw new RuntimeException('alertes non envoyées sur ' . implode(' | ', array_map(fn($c, $e) => CHANNEL_LABELS[$c] . " : $e", array_keys($errors), $errors)));
+    }
+}
+
+/** Last task of each minute: tells the external monitor that the server (and its collector) is alive. */
+function c_heartbeat(): void
+{
+    global $rc;
+    if (setting('monitor.ping_url') === '') {
+        save('heartbeat', ['enabled' => false]);
         return;
     }
-    $label = ['crit' => 'CRITIQUE', 'warn' => 'ATTENTION'];
-    $body = 'Serveur ' . gethostname() . ' — ' . date('d/m/Y H:i') . "\n\n";
-    if ($new) {
-        $body .= "Nouvelles alertes :\n" . implode("\n", array_map(fn($a) => "  [{$label[$a['level']]}] {$a['text']}", $new)) . "\n\n";
-    }
-    if ($gone) {
-        $body .= "Résolues :\n" . implode("\n", array_map(fn($a) => "  ✓ {$a['text']}", $gone)) . "\n\n";
-    }
-    $body .= 'Ouvrir le panel : ' . base_url() . "/\n";
-    $subject = $new ? count($new) . ' nouvelle(s) alerte(s) sur ' . gethostname() : 'Alertes résolues sur ' . gethostname();
-    try {
-        send_mail(array_values($to), $subject, $body);
-    } catch (Throwable $e) {
-        file_put_contents($stateFile, json_encode($before, JSON_UNESCAPED_UNICODE));   // retry at the next run
-        throw $e;
+    $prev = snapshot_data('heartbeat');
+    $res = heartbeat_send($rc === 0);
+    $st = ['enabled' => true, 'kind' => setting('monitor.kind'), 'last_try' => time(), 'collector_ok' => $rc === 0,
+        'last_ok' => $res['ok'] ? time() : ($prev['last_ok'] ?? null), 'last_error' => $res['error']];
+    save('heartbeat', $st);
+    if (!$res['ok']) {
+        throw new RuntimeException('ping de surveillance externe : ' . $res['error']);
     }
 }
 
