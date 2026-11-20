@@ -5,6 +5,8 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.4.0] — 2026-11-21
+
 ### Ajouté
 - **Sauvegarde des fichiers** en plus des bases : `/var/www`, `/etc/apache2`, `/etc/nginx`, `/etc/letsencrypt` et `/etc/hostkeep`, en archives `files/<nom>.tar.gz` (root seulement), avec exclusions réglables, conservation séparée (3 jours par défaut) et vérification de l'espace disque avant de commencer.
 - `manifest.json` dans chaque sauvegarde : contenu, tailles, sommes SHA-256 et erreurs.
