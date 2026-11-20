@@ -5,7 +5,8 @@ declare(strict_types=1);
  * Collector, run as root by the systemd timers hostkeep-*.timer:
  *   minute : metrics, services, processes
  *   5min   : sites (HTTP checks), certificates, PM2, security, databases
- *   hourly : storage, cron, pending updates, list of logs
+ *   hourly : storage, cron, pending updates, list of logs, retry of the off-site copy
+ *   backup : databases + files, then the off-site copy (offsite, offsite-test, offsite-fetch: by hand)
  *   purge  : drop old rows and job files
  *   all    : everything (used after install and by the "collect-now" action)
  * Only fixed commands are run here: nothing comes from the web.
@@ -22,6 +23,7 @@ require __DIR__ . '/../src/overview.php';
 require __DIR__ . '/../src/live.php';
 require __DIR__ . '/../src/webservers.php';
 require __DIR__ . '/../src/collect_extra.php';
+require __DIR__ . '/../src/offsite.php';
 
 const STATE = '/var/lib/hostkeep/state.json';
 putenv('PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin');
@@ -32,9 +34,12 @@ putenv('LC_ALL=C');
 $mode = $argv[1] ?? 'minute';
 $modes = ['minute' => ['metrics', 'services', 'processes', 'schedule'],
     '5min' => ['sites', 'certs', 'pm2', 'security', 'databases', 'traffic', 'perf', 'notify'],
-    'hourly' => ['storage', 'cron', 'updates', 'logkeys', 'backups', 'panel'],
+    'hourly' => ['storage', 'cron', 'updates', 'logkeys', 'offsite', 'backups', 'panel'],
     'purge' => ['purge'],
-    'backup' => ['backup', 'backups'],     // nightly database dumps
+    'backup' => ['backup', 'offsite', 'backups'],   // nightly dumps + files, then the off-site copy
+    'offsite' => ['offsite', 'backups'],            // "Envoyer maintenant"
+    'offsite-test' => ['offsite_test'],             // "Tester la connexion"
+    'offsite-fetch' => ['offsite_fetch'],           // hostkeep restore fetch [day]
     'scan' => ['scan'],                    // nightly security scan of the sites
     'updates' => ['updates'],              // after apt update / upgrade
     'backup-list' => ['backups']];         // after a restore

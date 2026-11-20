@@ -8,9 +8,9 @@ const ME = JSON.parse(document.getElementById('me-data').textContent);
 const can = perm => ME.perms.includes(perm);
 /* Root actions -> permission (mirror of ACTION_PERMS in app/src/rbac.php). */
 const VERB_PERMS = {
-  'collect-now': 'actions.routine', 'security-scan': 'actions.routine', 'apt-update': 'actions.routine', 'backup-now': 'actions.routine', 'certbot:dry-run': 'actions.routine',
+  'collect-now': 'actions.routine', 'security-scan': 'actions.routine', 'apt-update': 'actions.routine', 'backup-now': 'actions.routine', 'offsite-now': 'actions.routine', 'certbot:dry-run': 'actions.routine',
   service: 'actions.services', 'pm2-restart': 'actions.services', 'f2b-unban': 'actions.services',
-  site: 'actions.system', 'certbot:renew': 'actions.system', 'apt-clean': 'actions.system', 'journal-vacuum': 'actions.system', 'apt-upgrade': 'actions.system', 'backup-restore': 'actions.system', reboot: 'actions.system',
+  site: 'actions.system', 'certbot:renew': 'actions.system', 'apt-clean': 'actions.system', 'journal-vacuum': 'actions.system', 'apt-upgrade': 'actions.system', 'backup-restore': 'actions.system', reboot: 'actions.system', 'offsite-test': 'actions.system',
   'self-update': 'panel.update', 'self-rollback': 'panel.update', 'web-domain': 'panel.update',
 };
 const canVerb = (verb, args = []) => can(VERB_PERMS[`${verb}:${args[0] ?? ''}`] || VERB_PERMS[verb] || 'none');
@@ -96,6 +96,7 @@ const ICONS = {
   updown: [['path', { d: 'm8 9 4-4 4 4M8 15l4 4 4-4' }]],
   sliders: [['path', { d: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0' }], ['circle', { cx: 16, cy: 6, r: 2 }], ['circle', { cx: 10, cy: 12, r: 2 }], ['circle', { cx: 18, cy: 18, r: 2 }]],
   bell: [['path', { d: 'M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9z' }], ['path', { d: 'M10 20a2 2 0 0 0 4 0' }]],
+  cloud: [['path', { d: 'M7 19a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a4.75 4.75 0 0 1-.5 9.5z' }]],
 };
 const icon = name => el('svg', { viewBox: '0 0 24 24', class: 'i', 'aria-hidden': 'true' }, (ICONS[name] || []).map(([t, a]) => el(t, a)));
 document.querySelectorAll('[data-icon]').forEach(s => s.replaceChildren(icon(s.dataset.icon)));
@@ -332,7 +333,7 @@ const LEGACY = {
 
 const liveHist = [];   // last live samples, kept across page changes for the trend lines
 /* One-tap routine checks, on the home page and in the command palette (none of them changes the server state). */
-const QUICK = [['Contrôler les sites', 'collect-now'], ['Sauvegarder les bases', 'backup-now'], ['Chercher les mises à jour', 'apt-update'], ['Lancer l\'audit', 'security-scan']];
+const QUICK = [['Contrôler les sites', 'collect-now'], ['Sauvegarder maintenant', 'backup-now'], ['Chercher les mises à jour', 'apt-update'], ['Lancer l\'audit', 'security-scan']];
 const plural = (n, one, many = `${one}s`) => `${n} ${n > 1 ? many : one}`;
 
 B.summary = async () => {
@@ -372,7 +373,17 @@ B.summary = async () => {
     el('div', { class: 'hero-text', role: 'status' }, el('strong', {}, title), upSince),
     el('div', { class: 'hero-actions', role: 'group', 'aria-label': 'Actions rapides' },
       QUICK.filter(([, verb]) => canVerb(verb)).map(([label, verb]) => el('button', { class: 'btn', onclick: () => runAction(label, verb, []) }, label))));
-  return [hero, box, el('h3', { class: 'sub-head' }, all.length ? `À traiter (${all.length})` : 'Alertes'), list];
+  const b = ov.backup || {};
+  const backups = el('div', { class: 'stats' },
+    stat('Dernière sauvegarde', b.day ? (b.finished ? fmtDate(b.finished) : b.day) : 'aucune',
+      b.day ? `${plural(b.dbs || 0, 'base')}${b.archives ? `, ${plural(b.archives, 'dossier')}` : ''} · ${fmtBytes(b.size)}${b.errors?.length ? ' · incomplète' : ''}` : 'chaque nuit',
+      undefined, !b.day || b.errors?.length ? 'bad' : ''),
+    offsiteStat(b.offsite));
+  return [hero, box, el('h3', { class: 'sub-head' }, all.length ? `À traiter (${all.length})` : 'Alertes'), list,
+    el('h3', { class: 'sub-head' }, 'Sauvegardes'),
+    card(null, [backups, el('div', { class: 'form-actions' },
+      b.day ? dlArchive(b.day, '', 'Télécharger la dernière archive complète') : null,
+      el('a', { class: 'btn small', href: '#data/backups' }, 'Voir les sauvegardes'))])];
 };
 
 B.history = async () => {
@@ -704,26 +715,50 @@ B.databases = async () => {
   ];
 };
 
+/* Off-site copy, in a few words (backups page and home). */
+function offsiteStat(o) {
+  if (!o?.enabled) return stat('Copie externe', 'désactivée', can('settings.view') ? 'Paramètres › Sauvegarde externe' : 'sauvegardes sur ce serveur seulement', undefined, 'bad');
+  if (o.last_error) return stat('Copie externe', 'en échec', o.last_ok ? `dernière réussie ${ago(o.last_ok)}` : 'jamais réussie', undefined, 'bad');
+  return stat('Copie externe', o.last_ok ? ago(o.last_ok) : 'en attente', o.last_ok ? `${o.last_day ? `jour ${o.last_day} · ` : ''}${o.label || ''}` : 'part avec la prochaine sauvegarde');
+}
+const dlArchive = (day, archive = '', label = 'Télécharger') => can('backups.download')
+  ? el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', day, archive })}`, download: '' }, label) : null;
+const dayLabel = day => new Date(`${day}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+
 B.backups = async () => {
-  const s = await section('backups');
-  const d = s.data || {};
+  const [s, o] = await Promise.all([section('backups'), section('offsite')]);
+  const d = s.data || {}, off = o.data || {};
   const dl = (day, db) => can('backups.download') ? el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', day, db })}` }, 'Télécharger') : null;
-  const last = d.days?.[0]?.day;
+  const last = d.days?.[0];
   return {
-    actions: actionBtn('Sauvegarder maintenant', 'backup-now', []),
+    actions: [
+      off.enabled ? actionBtn('Envoyer maintenant', 'offsite-now', []) : null,
+      actionBtn('Sauvegarder maintenant', 'backup-now', [], { cls: 'primary' })],
     body: [
       stats(
-        stat('Dernière', last ? new Date(`${last}T12:00:00`).toLocaleDateString('fr-FR') : 'aucune', d.enabled === false ? 'automatique désactivée' : `chaque nuit à ${(d.time || '03:10').replace(':', ' h ')}`, undefined, !last || d.enabled === false ? 'bad' : ''),
-        stat('Espace', fmtBytes(d.total), `${d.days?.length ?? 0} jour(s) / ${d.keep ?? 7} max`),
-        stat('Emplacement', 'Ce serveur', d.dir || '/var/backups/hostkeep')),
+        stat('Dernière sauvegarde', last ? (last.finished ? fmtDate(last.finished) : new Date(`${last.day}T12:00:00`).toLocaleDateString('fr-FR')) : 'aucune',
+          d.enabled === false ? 'automatique désactivée' : `chaque nuit à ${(d.time || '03:10').replace(':', ' h ')}${last?.errors?.length ? ' · incomplète' : ''}`,
+          undefined, !last || d.enabled === false || last.errors?.length ? 'bad' : ''),
+        offsiteStat(off),
+        stat('Espace utilisé', fmtBytes(d.total), `${plural(d.days?.length ?? 0, 'jour')} · bases ${d.keep ?? 7} j, fichiers ${d.files_enabled ? `${d.files_keep ?? 3} j` : 'non'}${d.free ? ` · ${fmtBytes(d.free)} libres` : ''}`)),
+      last && can('backups.download') ? card(null, el('div', { class: 'row-between' },
+        el('div', {}, el('strong', {}, 'Archive complète du dernier jour'), el('p', { class: 'muted small' },
+          `${dayLabel(last.day)} : ${plural(last.files.length, 'base')}${last.archives?.length ? `, ${last.archives.map(a => a.name).join(', ')}` : ''} — ${fmtBytes(last.size)}, en un seul fichier .tar`)),
+        dlArchive(last.day, '', 'Télécharger l\'archive complète'))) : null,
       card(null, (d.days || []).length ? d.days.map(day => el('details', { open: day === d.days[0] ? true : null },
-        el('summary', {}, el('strong', {}, new Date(`${day.day}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })), el('span', { class: 'muted small' }, ` — ${day.files.length} base(s), ${fmtBytes(day.size)}`)),
+        el('summary', {}, el('strong', {}, dayLabel(day.day)),
+          el('span', { class: 'muted small' }, ` — ${plural(day.files.length, 'base')}${day.archives?.length ? `, ${plural(day.archives.length, 'archive')} de fichiers` : ''}, ${fmtBytes(day.size)}`),
+          day.errors?.length ? [' ', badge('incomplète', 'warn')] : null),
+        day.errors?.length ? el('div', { class: 'alert warn' }, badge('erreur', 'warn'), el('span', {}, day.errors.join(' · '))) : null,
         table(['Base', { label: 'Taille', num: true }, 'Faite à', ''], day.files.map(f => [el('strong', {}, f.db), fmtBytes(f.size), fmtDate(f.mtime),
-          [dl(day.day, f.db), f.db === 'mysql' ? null : actionBtn('Restaurer', 'backup-restore', [day.day, f.db], { cls: 'danger', confirm: `Remplacer le contenu actuel de la base ${f.db} par la sauvegarde du ${day.day} ?\n\nUne copie de l'état actuel est faite juste avant, tu pourras revenir en arrière.` })]]))))
+          [dl(day.day, f.db), f.db === 'mysql' ? null : actionBtn('Restaurer', 'backup-restore', [day.day, f.db], { cls: 'danger', confirm: `Remplacer le contenu actuel de la base ${f.db} par la sauvegarde du ${day.day} ?\n\nUne copie de l'état actuel est faite juste avant, tu pourras revenir en arrière.` })]])),
+        day.archives?.length ? table(['Fichiers', 'Dossier', { label: 'Taille', num: true }, ''], day.archives.map(a => [el('strong', {}, a.name), el('span', { class: 'mono small' }, a.path), fmtBytes(a.size), dlArchive(day.day, a.name)])) : null,
+        el('p', { class: 'small' }, dlArchive(day.day, '', 'Tout ce jour en un fichier'))))
         : emptyState('Aucune sauvegarde pour l\'instant.')),
       (d.pre || []).length ? card('Copies avant restauration', table(['Fichier', { label: 'Taille', num: true }, 'Date', ''], d.pre.map(p => [el('span', { class: 'mono' }, p.file), fmtBytes(p.size), fmtDate(p.mtime),
         can('backups.download') ? el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', pre: p.file })}` }, 'Télécharger') : null]))) : null,
-      note('Les sauvegardes restent sur ce serveur : télécharge de temps en temps celles qui comptent. La base « mysql » ne se restaure pas d\'ici.'),
+      note(`Les bases se restaurent ici. Les fichiers se restaurent sur le serveur : « sudo hostkeep restore files <jour> <archive> » (extrait à part, sans rien écraser).${off.enabled ? '' : ' Sans copie externe, une panne du disque emporte aussi les sauvegardes.'}`),
+      stale(s.updated),
     ],
   };
 };
@@ -808,6 +843,8 @@ function field(f, { editable = true } = {}) {
   let input;
   if (f.type === 'select') input = el('select', common, Object.entries(f.options).map(([k, l]) => el('option', { value: k, selected: String(k) === String(v) }, l)));
   else if (f.type === 'cidrs') input = el('textarea', { ...common, rows: 3, spellcheck: 'false', placeholder: '203.0.113.10\n10.8.0.0/24' }, v);
+  else if (f.type === 'lines') input = el('textarea', { ...common, rows: 4, spellcheck: 'false', class: 'mono' }, v);
+  else if (f.type === 'secrettext') input = el('textarea', { ...common, rows: 5, spellcheck: 'false', autocomplete: 'off', class: 'mono', placeholder: f.set ? '•••••••• (enregistré, jamais réaffiché) — colle une nouvelle valeur pour la remplacer' : f.placeholder }, '');
   else {
     const type = { int: 'number', time: 'time', email: 'email', password: 'password' }[f.type] || 'text';
     input = el('input', {
@@ -816,7 +853,20 @@ function field(f, { editable = true } = {}) {
       spellcheck: 'false', inputmode: f.type === 'int' ? 'numeric' : null,
     });
   }
-  return el('div', { class: 'field' }, el('label', { for: id }, f.label), input, help, err);
+  /* A stored secret can't be shown, nor cleared by leaving the box empty (= keep): explicit box to remove it. */
+  const clear = (f.type === 'password' || f.type === 'secrettext') && f.set && editable
+    ? el('label', { class: 'small muted clear-secret' }, el('input', { type: 'checkbox', name: `${f.key}#clear` }), ' Supprimer la valeur enregistrée') : null;
+  return el('div', { class: 'field', 'data-show': f.show ? JSON.stringify(f.show) : null }, el('label', { for: id }, f.label), input, clear, help, err);
+}
+/* Fields that only apply to some choices of a select (extra 'show' => [field, [values]]). */
+function bindShowWhen(form) {
+  const update = () => form.querySelectorAll('[data-show]').forEach(box => {
+    const [key, vals] = JSON.parse(box.dataset.show);
+    const ctl = form.elements[key];
+    box.hidden = !!ctl && !vals.includes(ctl.value);
+  });
+  form.addEventListener('change', update);
+  update();
 }
 function formValues(form) {
   const out = {};
@@ -998,15 +1048,19 @@ function settingsBlock(gid) {
       if (d.can_domain) extra.push(el('button', { class: 'btn', type: 'button', onclick: () => changeDomain(d.domain) }, 'Changer de domaine…'));
     }
     if (gid === 'smtp' && g.editable) extra.push(el('button', { class: 'btn', type: 'button', onclick: testMail }, icon('mail'), 'Envoyer un e-mail de test'));
+    if (gid === 'offsite' && g.editable) extra.push(actionBtn('Tester la connexion', 'offsite-test', []));
     const form = apiForm(g.fields.map(f => field(f, { editable: g.editable })), 'Enregistrer', async (values, frm) => {
       const res = await api({ r: 'settings.save', group: gid }, { body: { values } });
       cache.set('settings', Promise.resolve({ ...d, groups: res.groups }));
       frm.querySelectorAll('input[type=password]').forEach(i => { i.value = ''; });
       toast(`${g.label} : enregistré.`, 'ok');
       if (gid === 'general') ME.panel_name = values['general.panel_name'];
+      if (g.fields.some(f => f.type === 'secrettext' || f.type === 'password')) route(true);   // redraw the "saved" state of the secrets
     }, { extra, editable: g.editable });
+    bindShowWhen(form);
     return [top, card(null, [g.editable ? null : el('div', { class: 'alert info' }, badge('lecture seule', 'info'), el('span', {}, 'Ton rôle permet de consulter ces paramètres, pas de les modifier.')), form]),
-      gid === 'backups' ? note('Les sauvegardes elles-mêmes (liste, téléchargement, restauration) sont dans Données › Sauvegardes.') : null,
+      gid === 'backups' ? note('Les sauvegardes elles-mêmes (liste, téléchargement, restauration) sont dans Données › Sauvegardes. La copie hors du serveur se règle dans « Sauvegarde externe ».') : null,
+      gid === 'offsite' ? note('Enregistre, puis « Tester la connexion ». Les envois suivent chaque sauvegarde ; une copie ratée est retentée toutes les heures. Sur un nouveau serveur : « sudo hostkeep restore fetch » liste les jours disponibles et en rapatrie un.') : null,
       gid === 'security' ? note('Les échecs de connexion sont aussi transmis à fail2ban (jail « hostkeep »), qui bannit l\'adresse au niveau du pare-feu.') : null];
   };
 }
@@ -1090,7 +1144,7 @@ B.login = async () => {
 };
 
 /* Administration › Paramètres: one settings group at a time, with its own side menu. */
-const SETTINGS_ICONS = { general: 'sliders', smtp: 'mail', notifications: 'bell', backups: 'data', security: 'security' };
+const SETTINGS_ICONS = { general: 'sliders', smtp: 'mail', notifications: 'bell', backups: 'data', offsite: 'cloud', security: 'security' };
 B.settings = async sub => {
   const d = await settingsData();
   const ids = d.groups.map(g => g.id);

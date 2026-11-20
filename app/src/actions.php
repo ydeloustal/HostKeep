@@ -20,6 +20,8 @@ const ACTIONS = [
     'apt-update'     => [],
     'apt-upgrade'    => [],
     'reboot'         => [],
+    'offsite-test'   => [],
+    'offsite-now'    => [],
     'self-update'    => [],
     'self-rollback'  => [],
     'web-domain'     => ['(?=.{4,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}'],
@@ -74,14 +76,31 @@ function fs_download(string $path): never
     if (!valid_fs_path($path)) {
         json_out(['error' => 'chemin invalide'], 400);
     }
-    $p = proc_open(['/usr/bin/sudo', '-n', HELPER, 'fs-read', $path, '52428800'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    helper_stream(['fs-read', $path, '52428800'], basename($path));
+}
+
+/** A whole backup day (tar), or one of its file archives, streamed from the root helper. */
+function backup_stream(string $day, string $item): never
+{
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/D', $day) || ($item !== '' && !preg_match('/^[a-z0-9]{1,20}$/D', $item))) {
+        json_out(['error' => 'sauvegarde introuvable'], 404);
+    }
+    $host = preg_replace('/[^A-Za-z0-9.-]/', '_', (string) gethostname());
+    helper_stream(['backup-stream', $day, ...($item !== '' ? [$item] : [])], $item !== '' ? "$item-$day.tar.gz" : "hostkeep-$host-$day.tar");
+}
+
+/** Runs the root helper and sends its stdout as a download, without loading it in memory. */
+function helper_stream(array $args, string $name): never
+{
+    set_time_limit(0);
+    $p = proc_open(['/usr/bin/sudo', '-n', HELPER, ...$args], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
     $first = fread($pipes[1], 8192);
     if ($first === '' || $first === false) {
         $err = stream_get_contents($pipes[2]);
         proc_close($p);
         json_out(['error' => trim((string) $err) ?: 'fichier vide ou illisible'], 400);
     }
-    send_download_headers(basename($path));
+    send_download_headers($name);
     echo $first;
     fpassthru($pipes[1]);
     fclose($pipes[1]);

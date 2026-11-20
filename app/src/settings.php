@@ -7,7 +7,8 @@ declare(strict_types=1);
  * from the browser. Secrets (SMTP password) are encrypted with HOSTKEEP_APP_KEY and never sent back.
  *
  * Field: key => [type, default, label, help, extra]
- *   types: text, email, emails, int, bool, select, time, password, cidrs
+ *   types: text, email, emails, int, bool, select, time, password, cidrs, lines, secrettext
+ *   (password and secrettext are stored encrypted; extra 'show' => [field, [values]] shows a field only for some choices)
  */
 function settings_schema(): array
 {
@@ -31,9 +32,31 @@ function settings_schema(): array
             'notify.recipients' => ['emails', '', 'Destinataires', 'Adresses séparées par des virgules. Vide = tous les Super Admins et Administrateurs actifs ayant un e-mail.', []],
         ]],
         'backups' => ['label' => 'Sauvegardes', 'perm' => 'settings.backups', 'fields' => [
-            'backup.enabled' => ['bool', '1', 'Sauvegarde automatique des bases', 'Un dump compressé de chaque base MariaDB, chaque nuit.', []],
+            'backup.enabled' => ['bool', '1', 'Sauvegarde automatique', 'Chaque nuit : un dump compressé de chaque base MariaDB, plus les fichiers si l\'option ci-dessous est cochée.', []],
             'backup.time' => ['time', '03:10', 'Heure de la sauvegarde', 'Heure du serveur. Appliquée dans la minute.', []],
-            'backup.keep_days' => ['int', '7', 'Durée de conservation (jours)', 'Les sauvegardes plus anciennes sont supprimées.', ['min' => 1, 'max' => 365]],
+            'backup.keep_days' => ['int', '7', 'Conservation des bases (jours)', 'Les sauvegardes plus anciennes sont supprimées.', ['min' => 1, 'max' => 365]],
+            'backup.files_enabled' => ['bool', '1', 'Sauvegarder aussi les fichiers', '/var/www, /etc/apache2, /etc/nginx, /etc/letsencrypt et /etc/hostkeep, en archives .tar.gz. Sautée (avec une alerte) s\'il ne reste pas assez de place sur le disque.', []],
+            'backup.files_keep_days' => ['int', '3', 'Conservation des fichiers (jours)', 'Les archives de fichiers prennent plus de place : garde-les moins longtemps ici, la copie externe a sa propre durée. Jamais plus que celle des bases.', ['min' => 1, 'max' => 365]],
+            'backup.exclude' => ['lines', "node_modules\n.cache\n*.log\n*.tmp", 'Fichiers exclus', 'Un motif par ligne (syntaxe tar, ex. node_modules ou */cache/*). Les dossiers qui contiennent un fichier CACHEDIR.TAG sont toujours exclus.', []],
+        ]],
+        'offsite' => ['label' => 'Sauvegarde externe', 'perm' => 'settings.backups', 'fields' => [
+            'offsite.enabled' => ['bool', '0', 'Copier les sauvegardes hors du serveur', 'Avec rclone, juste après chaque sauvegarde. Une copie qui échoue est retentée toutes les heures.', []],
+            'offsite.type' => ['select', 's3', 'Destination', '', ['options' => ['s3' => 'Stockage S3 (AWS, Scaleway, OVH, Backblaze, MinIO…)', 'sftp' => 'SFTP (un autre serveur, un NAS)', 'rclone' => 'Autre, avec une configuration rclone (Google Drive, Dropbox, OneDrive…)']]],
+            'offsite.s3_provider' => ['select', 'Other', 'Fournisseur S3', '', ['options' => ['AWS' => 'Amazon S3', 'Scaleway' => 'Scaleway', 'Wasabi' => 'Wasabi', 'Minio' => 'MinIO', 'Other' => 'Autre compatible S3 (OVH, Backblaze B2, Garage…)'], 'show' => ['offsite.type', ['s3']]]],
+            'offsite.s3_endpoint' => ['text', '', 'Point d\'accès (endpoint)', 'Vide pour Amazon S3.', ['max' => 190, 'placeholder' => 's3.fr-par.scw.cloud', 'show' => ['offsite.type', ['s3']]]],
+            'offsite.s3_region' => ['text', '', 'Région', '', ['max' => 40, 'placeholder' => 'fr-par', 'show' => ['offsite.type', ['s3']]]],
+            'offsite.s3_access_key' => ['text', '', 'Clé d\'accès (access key)', '', ['max' => 200, 'show' => ['offsite.type', ['s3']]]],
+            'offsite.s3_secret_key' => ['password', '', 'Clé secrète (secret key)', 'Stockée chiffrée. Laisse vide pour garder l\'actuelle.', ['show' => ['offsite.type', ['s3']]]],
+            'offsite.sftp_host' => ['text', '', 'Serveur SFTP', '', ['max' => 190, 'placeholder' => 'backup.example.com', 'show' => ['offsite.type', ['sftp']]]],
+            'offsite.sftp_port' => ['int', '22', 'Port', '', ['min' => 1, 'max' => 65535, 'show' => ['offsite.type', ['sftp']]]],
+            'offsite.sftp_user' => ['text', '', 'Utilisateur', '', ['max' => 64, 'show' => ['offsite.type', ['sftp']]]],
+            'offsite.sftp_password' => ['password', '', 'Mot de passe', 'Ou une clé privée ci-dessous (recommandé). Stocké chiffré.', ['show' => ['offsite.type', ['sftp']]]],
+            'offsite.sftp_key' => ['secrettext', '', 'Clé privée SSH', 'Le contenu complet de la clé (OpenSSH ou PEM), sans phrase de passe. Stockée chiffrée, jamais réaffichée.', ['show' => ['offsite.type', ['sftp']]]],
+            'offsite.rclone_config' => ['secrettext', '', 'Configuration rclone', 'Les lignes « clé = valeur » d\'une section de rclone.conf (le titre [nom] est ignoré). Pour Google Drive : lance « rclone config » sur ton ordinateur, puis colle ici la section obtenue. Stockée chiffrée.', ['show' => ['offsite.type', ['rclone']]]],
+            'offsite.path' => ['text', '', 'Dossier distant', 'S3 : le nom du bucket, puis un dossier si tu veux. Les sauvegardes y sont rangées par serveur, puis par jour.', ['max' => 200, 'placeholder' => 'mon-bucket/hostkeep']],
+            'offsite.keep_days' => ['int', '30', 'Conservation à distance (jours)', 'Les copies distantes plus anciennes sont supprimées.', ['min' => 1, 'max' => 3650]],
+            'offsite.crypt_password' => ['password', '', 'Phrase de chiffrement (recommandé)', 'Les fichiers sont chiffrés avant l\'envoi (rclone crypt) : l\'hébergeur distant ne voit ni les noms ni le contenu. Garde-la ailleurs : sans elle, les copies sont illisibles. La changer rend les anciennes copies illisibles avec la nouvelle.', []],
+            'offsite.bwlimit' => ['text', '', 'Limite de débit', 'Ex. 2M pour 2 Mo/s. Vide = sans limite.', ['max' => 10, 'placeholder' => '2M']],
         ]],
         'security' => ['label' => 'Sécurité', 'perm' => 'settings.security', 'fields' => [
             'security.session_timeout' => ['int', (string) max(5, intdiv((int) env('HOSTKEEP_SESSION_TIMEOUT', '1800'), 60)), 'Déconnexion après inactivité (minutes)', '', ['min' => 5, 'max' => 1440]],
@@ -76,7 +99,12 @@ function setting(string $key): string
     if ($v === null) {
         return $f ? $f[1] : '';
     }
-    return ($f && $f[0] === 'password') ? secret_decrypt($v) : $v;
+    return ($f && is_secret_type($f[0])) ? secret_decrypt($v) : $v;
+}
+
+function is_secret_type(string $type): bool
+{
+    return $type === 'password' || $type === 'secrettext';
 }
 
 function setting_int(string $key): int
@@ -117,8 +145,9 @@ function settings_for(array $user): array
         $fields = [];
         foreach ($g['fields'] as $key => [$type, $default, $label, $help, $extra]) {
             $raw = settings_all()[$key] ?? null;
-            $fields[] = ['key' => $key, 'type' => $type, 'label' => $label, 'help' => $help, 'default' => $type === 'password' ? '' : $default,
-                'value' => $type === 'password' ? '' : ($raw ?? $default), 'set' => $type === 'password' ? ($raw ?? '') !== '' : null] + $extra;
+            $secret = is_secret_type($type);
+            $fields[] = ['key' => $key, 'type' => $type, 'label' => $label, 'help' => $help, 'default' => $secret ? '' : $default,
+                'value' => $secret ? '' : ($raw ?? $default), 'set' => $secret ? ($raw ?? '') !== '' : null] + $extra;
         }
         $out[] = ['id' => $gid, 'label' => $g['label'], 'editable' => can($user, $g['perm']), 'fields' => $fields];
     }
@@ -137,10 +166,14 @@ function settings_save(string $group, array $in, array $user): array
     $errors = [];
     $clean = [];
     foreach ($g['fields'] as $key => [$type, $default, $label, $help, $extra]) {
+        if (is_secret_type($type) && ($in["$key#clear"] ?? '') === '1') {
+            $clean[$key] = '';   // "remove the stored value" box
+            continue;
+        }
         if (!array_key_exists($key, $in)) {
             continue;
         }
-        $v = is_scalar($in[$key]) ? trim((string) $in[$key]) : '';
+        $v = is_scalar($in[$key]) ? ($type === 'secrettext' || $type === 'lines' ? (string) $in[$key] : trim((string) $in[$key])) : '';
         $err = null;
         switch ($type) {
             case 'text':
@@ -152,7 +185,25 @@ function settings_save(string $group, array $in, array $user): array
                     $err = 'Nom d\'hôte invalide.';
                 } elseif ($key === 'general.panel_name' && $v === '') {
                     $err = 'Obligatoire.';
+                } elseif ($v !== '' && ($re = OFFSITE_TEXT_RULES[$key] ?? null) && !preg_match($re[0], $v)) {
+                    $err = $re[1];
                 }
+                break;
+            case 'lines':
+                $list = array_values(array_filter(array_map('trim', preg_split('/\R/', $v)), 'strlen'));
+                foreach ($list as $l) {
+                    if (strlen($l) > 200 || preg_match('/[\x00-\x1F\x7F]/', $l) || str_starts_with($l, '-')) {
+                        $err = "Ligne invalide : $l";
+                    }
+                }
+                $v = implode("\n", $list);
+                break;
+            case 'secrettext':
+                $v = trim(str_replace("\r", '', $v));
+                if ($v === '') {
+                    continue 2;   // keep the stored one
+                }
+                $err = strlen($v) > 20000 ? 'Trop long.' : secrettext_problem($key, $v);
                 break;
             case 'email':
                 if ($v !== '' && !valid_email($v)) {
@@ -221,11 +272,11 @@ function settings_save(string $group, array $in, array $user): array
     $st = db()->prepare('REPLACE INTO settings (name, value, updated_at, updated_by) VALUES (?, ?, ?, ?)');
     $changed = [];
     foreach ($clean as $key => $v) {
-        $isSecret = settings_fields()[$key][0] === 'password';
+        $isSecret = is_secret_type(settings_fields()[$key][0]);
         if (!$isSecret && ($old[$key] ?? settings_fields()[$key][1]) === $v) {
             continue;
         }
-        $st->execute([$key, $isSecret ? secret_encrypt($v) : $v, time(), $user['username']]);
+        $st->execute([$key, $isSecret && $v !== '' ? secret_encrypt($v) : $v, time(), $user['username']]);
         $changed[] = $key;
     }
     settings_all(true);
@@ -233,6 +284,41 @@ function settings_save(string $group, array $in, array $user): array
         audit('settings ' . $group . ' : ' . implode(', ', $changed));
     }
     return [];
+}
+
+/** Text fields that end up in rclone.conf or on the rclone command line: strict formats. */
+const OFFSITE_TEXT_RULES = [
+    'offsite.s3_endpoint' => ['/^(https?:\/\/)?[A-Za-z0-9.-]{1,180}(:\d{1,5})?\/?$/D', 'Adresse invalide (ex. s3.fr-par.scw.cloud).'],
+    'offsite.s3_region' => ['/^[A-Za-z0-9-]{1,40}$/D', 'Région invalide (ex. fr-par).'],
+    'offsite.s3_access_key' => ['/^[A-Za-z0-9+\/=._-]{1,200}$/D', 'Clé d\'accès invalide.'],
+    'offsite.sftp_host' => ['/^[A-Za-z0-9.:-]{1,190}$/D', 'Nom d\'hôte ou adresse IP invalide.'],
+    'offsite.sftp_user' => ['/^[A-Za-z0-9._-]{1,64}$/D', 'Nom d\'utilisateur invalide.'],
+    'offsite.path' => ['/^(?!.*\.\.)[A-Za-z0-9._-][A-Za-z0-9._\/-]{0,199}$/D', 'Chemin invalide : lettres, chiffres, « . _ - / », sans « .. ».'],
+    'offsite.bwlimit' => ['/^\d{1,6}[KMGkmg]?$/D', 'Ex. 2M ou 500K.'],
+];
+
+function secrettext_problem(string $key, string $v): ?string
+{
+    if ($key === 'offsite.sftp_key' && !preg_match('/-----BEGIN [A-Z ]*PRIVATE KEY-----.+-----END [A-Z ]*PRIVATE KEY-----/s', $v)) {
+        return 'Ce n\'est pas une clé privée (-----BEGIN … PRIVATE KEY-----).';
+    }
+    if ($key === 'offsite.rclone_config') {
+        $type = false;
+        foreach (preg_split('/\n/', $v) as $l) {
+            $l = trim($l);
+            if ($l === '' || $l[0] === '#' || $l[0] === ';' || preg_match('/^\[[^\]]*\]$/', $l)) {
+                continue;
+            }
+            if (!preg_match('/^([a-z0-9_]{1,60})\s*=\s*[^\x00-\x1F\x7F]*$/D', $l, $m)) {
+                return "Ligne non reconnue (attendu « clé = valeur ») : " . mb_substr($l, 0, 60);
+            }
+            $type = $type || $m[1] === 'type';
+        }
+        if (!$type) {
+            return 'Il manque la ligne « type = … » (ex. type = drive).';
+        }
+    }
+    return null;
 }
 
 function valid_email(string $e): bool
