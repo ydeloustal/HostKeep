@@ -1,0 +1,41 @@
+#!/bin/bash
+# hostkeep: command line of the Hostkeep panel, installed as /usr/local/bin/hostkeep.
+#
+#   sudo hostkeep status                 state of the panel, its services and its web front
+#   sudo hostkeep admin                  create the first Super Admin
+#   sudo hostkeep users                  list the accounts
+#   sudo hostkeep user create bob --role=editor --email=bob@example.com --generate
+#   sudo hostkeep passwd bob             new password (--generate for a temporary one)
+#   sudo hostkeep unlock bob             unlock an account after failed logins
+#   sudo hostkeep web [apache|nginx|caddy|proxy|none] [--domain D] [--https yes|no]
+#   sudo hostkeep update                 git pull + reinstall (same as the panel's update button)
+#   sudo hostkeep collect [mode]         run the collector now
+#   sudo hostkeep logs                   last lines of the panel logs
+#   sudo hostkeep uninstall [--purge]
+set -euo pipefail
+[[ $(id -u) -eq 0 ]] || exec sudo -- "$0" "$@"
+APP=/var/www/hostkeep
+SRC=$(head -n1 /var/lib/hostkeep/source 2>/dev/null || true)
+[[ -n $SRC && -x $SRC/install.sh ]] || SRC=/opt/hostkeep
+user() { php "$APP/bin/user.php" "$@"; }
+installer() { [[ -x $SRC/install.sh ]] || { echo "Dépôt source introuvable ($SRC)." >&2; exit 1; }; "$SRC/install.sh" "$@"; }
+
+cmd=${1:-help}; shift || true
+case $cmd in
+  status) installer status ;;
+  admin) user setup "$@" ;;
+  users) user list ;;
+  user) user "${@:-list}" ;;
+  passwd|unlock|enable|disable|role) user "$cmd" "$@" ;;
+  web) installer web "$@" ;;
+  update)
+    [[ -d $SRC/.git ]] || { echo "Pas de clone git dans $SRC : mise à jour impossible." >&2; exit 1; }
+    git -C "$SRC" pull --ff-only && installer app ;;
+  collect) php "$APP/bin/collect.php" "${1:-all}" ;;
+  logs)
+    journalctl -u hostkeep -u hostkeep-http -u 'hostkeep-collect@*' -n "${1:-60}" --no-pager || true
+    echo "--- /var/log/hostkeep/php-error.log"; tail -n 30 /var/log/hostkeep/php-error.log 2>/dev/null || true ;;
+  uninstall) installer uninstall "$@" ;;
+  version) cat "$APP/VERSION" 2>/dev/null || echo "?" ;;
+  *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; [[ $cmd == help ]] ;;
+esac

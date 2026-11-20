@@ -64,6 +64,8 @@ validate() {
       return 0 ;;
     certbot)
       [[ $# -eq 1 ]] && in_list "$1" dry-run renew || die "action certbot" ;;
+    web-domain)
+      [[ $# -eq 1 && ${#1} -le 253 && $1 =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]] || die "nom de domaine invalide" ;;
     apt-clean|journal-vacuum|collect-now|backup-now|security-scan|apt-update|apt-upgrade|self-update|self-rollback)
       [[ $# -eq 0 ]] || die "arguments" ;;
     backup-restore)
@@ -121,7 +123,7 @@ run() {
     collect-now)
       php "$APP/bin/collect.php" all && echo "Collecte terminée." ;;
     backup-now)
-      php "$APP/bin/collect.php" backup && echo "Sauvegarde terminée." ;;
+      php "$APP/bin/collect.php" backup --force && echo "Sauvegarde terminée." ;;
     backup-restore)
       mkdir -p "$BACKUPS/pre-restore" && chgrp hostkeep "$BACKUPS/pre-restore" && chmod 750 "$BACKUPS/pre-restore"
       pre="$BACKUPS/pre-restore/$(date +%Y%m%d-%H%M%S)-$2.sql.gz"
@@ -168,6 +170,13 @@ run() {
       echo "# ./install.sh app"
       "$src/install.sh" app || return 1
       echo "Retour arrière terminé. Les nouveautés réapparaissent comme mises à jour disponibles. Recharge la page." ;;
+    web-domain)
+      local src
+      src=$(source_dir) || { echo "$src"; return 1; }
+      echo "# ./install.sh web --domain $1 --yes"
+      echo "Ancien domaine : $(env_get HOSTKEEP_DOMAIN '(aucun)')"
+      "$src/install.sh" web --domain "$1" --yes || { echo "Échec : la configuration précédente a été remise en place."; return 1; }
+      echo "Panel désormais servi sur $1. Ouvre la nouvelle adresse (l'ancienne ne répond plus)." ;;
     apt-upgrade)
       export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
       apt-get update || return 1
