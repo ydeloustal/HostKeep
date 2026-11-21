@@ -436,7 +436,7 @@ async function siteHistory(host) {
   await draw();
 }
 
-const WEB_NAME = { apache: 'Apache', nginx: 'Nginx' };
+const WEB_NAME = { apache: 'Apache', nginx: 'Nginx', caddy: 'Caddy' };
 const TEST_CMD = { apache: 'configtest', nginx: 'nginx -t' };
 /* "nginx:site.conf" -> { server, conf }; Hostkeep ≤ 2.1 snapshots hold bare Apache names. */
 const splitConf = c => typeof c === 'object' ? c : c.includes(':') ? { server: c.split(':')[0], conf: c.slice(c.indexOf(':') + 1) } : { server: 'apache', conf: c };
@@ -459,7 +459,8 @@ B.sites = async () => {
       x.cert_days !== null && x.cert_days !== undefined ? badge(`${x.cert_days} j`, certCls) : badge('HTTP seul'),
       el('details', { class: 'more' }, el('summary', {}, both ? `Config ${(x.server || 'apache').split('+').map(v => WEB_NAME[v] || v).join(' + ')}` : 'Config'),
         el('div', { class: 'mono small' }, confs.map(c => both ? `${c.conf} (${WEB_NAME[c.server]})` : c.conf).join(', ')),
-        confs.filter(c => !c.conf.startsWith(d.self)).map(c => actionBtn(`Désactiver ${c.conf}`, 'site', ['disable', c.server, c.conf], { cls: 'danger', confirm: `Désactiver ${c.conf} (${WEB_NAME[c.server]}) ? Le site ne sera plus servi (${TEST_CMD[c.server]} puis rechargement, retour arrière si erreur).` }))),
+        confs.some(c => c.server === 'caddy') ? el('div', { class: 'muted small' }, 'Caddy : un seul Caddyfile pour tous les sites, à modifier sur le serveur (caddy reload).') : null,
+        confs.filter(c => !c.conf.startsWith(d.self) && c.server !== 'caddy').map(c => actionBtn(`Désactiver ${c.conf}`, 'site', ['disable', c.server, c.conf], { cls: 'danger', confirm: `Désactiver ${c.conf} (${WEB_NAME[c.server]}) ? Le site ne sera plus servi (${TEST_CMD[c.server]} puis rechargement, retour arrière si erreur).` }))),
     ];
   });
   const disabled = (d.disabled || []).map(splitConf);
@@ -480,10 +481,10 @@ B.sites = async () => {
 B.certs = async () => {
   const s = await section('certs');
   const rows = (s.data?.certs || []).map(c => [el('strong', {}, c.name), el('span', { class: 'small' }, c.domains.join(', ')), fmtDate(c.expires),
-    badge(`${c.days} j`, c.days < 15 ? 'crit' : c.days < 30 ? 'warn' : 'ok')]);
+    badge(`${c.days} j`, c.days < 15 ? 'crit' : c.days < 30 ? 'warn' : 'ok'), el('span', { class: 'muted small' }, c.by === 'caddy' ? 'Caddy' : 'certbot')]);
   return {
     actions: [actionBtn('Tester', 'certbot', ['dry-run']), actionBtn('Renouveler', 'certbot', ['renew'], { confirm: 'Lancer certbot renew ? (seuls les certificats à moins de 30 jours sont renouvelés)' })],
-    body: [card(null, table(['Nom', 'Domaines', 'Expire le', 'Restant'], rows)), note('Renouvellement automatique par le timer certbot. Aucune suppression possible ici.')],
+    body: [card(null, table(['Nom', 'Domaines', 'Expire le', 'Restant', 'Géré par'], rows)), note('Renouvellement automatique : par le timer certbot, ou par Caddy lui-même (30 jours avant l\'expiration). Les boutons ne concernent que certbot. Aucune suppression possible ici.')],
   };
 };
 
@@ -629,16 +630,22 @@ const fixBtn = (k, label = 'Appliquer', off = false) => actionBtn(label, 'harden
 });
 function fixesCard(scan) {
   const h = scan.hardening || {}, srv = h.servers || {};
-  if (!srv.apache && !srv.nginx) return null;
+  const caddyCard = srv.caddy && h.caddy_snippet ? card('Caddy : corrections à copier', [
+    el('p', {}, 'Caddy n\'a pas de fichier global que Hostkeep pourrait ajouter sans toucher à tes sites. Colle ce bloc en haut de /etc/caddy/Caddyfile, ajoute « import hostkeep_securite » dans le bloc de chaque site, puis vérifie et recharge :'),
+    el('pre', { class: 'log' }, h.caddy_snippet.split('\n').filter(l => !l.startsWith('#')).join('\n').trim()),
+    el('pre', { class: 'log' }, 'caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy'),
+    note('Les en-têtes préfixés par « ? » ne remplacent jamais ceux déjà envoyés par un site. Caddy n\'affiche pas sa version : rien à masquer.'),
+  ]) : null;
+  if (!srv.apache && !srv.nginx) return caddyCard;
   const left = k => scan.findings.filter(f => fixFor(f) === k).length;
-  return card('Corrections automatiques', [
+  return [card('Corrections automatiques', [
     table(['Correction', 'État', ''], Object.entries(FIXES).map(([k, f]) => [
       el('div', {}, el('strong', {}, f.label), el('div', { class: 'muted small' }, f.desc)),
       h[k] ? [badge('appliquée', 'ok'), left(k) ? el('div', { class: 'small muted' }, `${plural(left(k), 'constat')} restant${left(k) > 1 ? 's' : ''}`) : null]
         : left(k) ? badge(plural(left(k), 'constat'), 'warn') : el('span', { class: 'muted small' }, 'rien à corriger'),
       h[k] ? fixBtn(k, 'Retirer', true) : (left(k) ? fixBtn(k) : null)])),
     srv.nginx ? note('Nginx : les en-têtes globaux ne s\'appliquent pas aux blocs qui ont leurs propres add_header, et le blocage des fichiers sensibles demande une ligne « include » par site. Après « Appliquer », le compte rendu liste les fichiers où l\'ajouter.') : null,
-  ]);
+  ]), caddyCard];
 }
 B.audit = async () => {
   const [s, sc] = await Promise.all([section('security'), section('secscan')]);
@@ -666,7 +673,8 @@ B.audit = async () => {
       scan ? fixesCard(scan) : null,
       card('Constats', [
         scan ? table(['Gravité', 'Site', 'Constat', 'Détail', ''], scan.findings.map(f => {
-          const k = fixFor(f), on = scan.hardening?.[k];
+          const srv = scan.hardening?.servers || {};
+          const k = srv.apache || srv.nginx ? fixFor(f) : null, on = scan.hardening?.[k];   // Caddy only: see the card to copy
           return [badge(...SEV[f.severity]), el('strong', {}, f.site), f.title, el('span', { class: 'mono small' }, f.detail),
             k ? (on ? el('span', { class: 'muted small', title: 'Correction déjà appliquée : ce site envoie ses propres règles, ou (Nginx) doit inclure le snippet.' }, 'voir ci-dessus') : fixBtn(k, 'Corriger')) : null];
         }), 'Aucun problème trouvé.')

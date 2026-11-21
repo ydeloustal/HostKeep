@@ -1,0 +1,14 @@
+# Hostkeep — security headers and blocked sensitive files for Caddy (Sécurité › Audit).
+# Caddy has no folder loaded for every site: paste this block at the top of /etc/caddy/Caddyfile,
+# add « import hostkeep_securite » inside each site block, then: caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy
+(hostkeep_securite) {
+	header {
+		?X-Content-Type-Options "nosniff"
+		?X-Frame-Options "SAMEORIGIN"
+		?Referrer-Policy "strict-origin-when-cross-origin"
+		?Strict-Transport-Security "max-age=15552000"
+		-Server
+	}
+	@hostkeep_sensibles path_regexp hostkeep_sensibles (^|/)(\.env|\.git(/|$)|\.htpasswd$|composer\.(json|lock)$|(php)?info\.php$)|\.(sql|sql\.gz|dump|bak|old|orig|swp|log)$|~$|^/(.+/)?(sql|backups?|dumps?)/
+	respond @hostkeep_sensibles 403
+}

@@ -152,6 +152,20 @@ Depuis un clone, les étapes se lancent aussi une par une : `sudo ./install.sh d
 
 Garde-fous : refus si le domaine est déjà servi par un autre site, refus de lancer un second serveur sur des ports déjà pris, `configtest` / `nginx -t` / `caddy validate` avant chaque rechargement, et **retour automatique à la configuration précédente** en cas d'erreur (y compris quand on change de mode ou de domaine). Le certificat se renouvelle tout seul (`certbot.timer`).
 
+**Ce que le panel sait faire avec chaque serveur web** (ils peuvent tourner ensemble, ex. Nginx devant Apache : les sites sont fusionnés par nom) :
+
+| | Apache | Nginx | Caddy | Proxy (Traefik, HAProxy…) |
+|---|:---:|:---:|:---:|:---:|
+| Publier le panel | ✔ | ✔ | ✔ | ✔ |
+| Découvrir les sites, disponibilité, temps de réponse | ✔ | ✔ | ✔ (config en cours ou Caddyfile) | — |
+| Certificats suivis | ✔ certbot | ✔ certbot | ✔ ceux de Caddy | — |
+| Trafic (visiteurs, robots, erreurs) | ✔ | ✔ | — | — |
+| Activer / désactiver un site depuis le panel | ✔ | ✔ | — (un seul Caddyfile) | — |
+| Corriger l'audit | ✔ en un clic | ✔ en un clic (+ `include` par site parfois) | bloc prêt à coller | — |
+| Config sauvegardée chaque nuit | `/etc/apache2` | `/etc/nginx` | `/etc/caddy` | — |
+
+Les sites derrière un proxy externe (Traefik, conteneurs…) restent invisibles pour Hostkeep, qui ne lit pas leur configuration.
+
 Changer plus tard : `sudo hostkeep web nginx`, `sudo hostkeep web --domain nouveau.domaine.fr`, ou depuis le panel (*Administration › Général › Changer de domaine*, Super Admin).
 
 ## 👥 Comptes et rôles
@@ -247,7 +261,7 @@ Les alertes (*Paramètres › Alertes*) partent **du serveur** : e-mail, Discord
 | **Fichiers sensibles bloqués** (`.env`, `.git`, dumps, sauvegardes, `composer.json`, phpinfo, listes de dossiers) | `conf-available/hardening.conf` | `snippets/hostkeep-deny.conf`, à inclure dans chaque bloc `server` (le compte rendu liste les fichiers) |
 | **Version du serveur masquée** | `ServerTokens Prod`, `ServerSignature Off` | `server_tokens off` |
 
-Les sites eux-mêmes ne sont jamais modifiés : pour Nginx, Hostkeep indique la ligne `include` à ajouter et où.
+Les sites eux-mêmes ne sont jamais modifiés : pour Nginx, Hostkeep indique la ligne `include` à ajouter et où. **Caddy** n'a pas de dossier chargé pour tous les sites : l'audit affiche un bloc `(hostkeep_securite)` prêt à coller dans le Caddyfile, avec `import hostkeep_securite` dans chaque site.
 
 ## 💾 Sauvegarder et restaurer
 
@@ -256,7 +270,7 @@ Chaque nuit (heure réglable), Hostkeep range dans `/var/backups/hostkeep/AAAA-M
 | Quoi | Fichier | Conservation par défaut |
 |---|---|---|
 | Chaque base MariaDB | `<base>.sql.gz` | 7 jours |
-| `/var/www`, `/etc/apache2`, `/etc/nginx`, `/etc/letsencrypt`, `/etc/hostkeep` | `files/<nom>.tar.gz` (lisible par root seulement) | 3 jours |
+| `/var/www`, `/etc/apache2`, `/etc/nginx`, `/etc/caddy`, `/etc/letsencrypt`, `/etc/hostkeep` (ceux qui existent) | `files/<nom>.tar.gz` (lisible par root seulement) | 3 jours |
 | Ce qui a été fait, tailles, sommes SHA-256, erreurs | `manifest.json` | — |
 
 Avant d'archiver les fichiers, Hostkeep vérifie qu'il reste assez de place (et garde 1 Gio libre) : sinon il saute cette partie et lève une alerte, plutôt que de remplir le disque.
@@ -389,13 +403,20 @@ Les autres sites ne sont pas touchés. Le certificat Let's Encrypt est conservé
 
 ```
 app/
-  public/       pages servies (index, connexion, mot de passe, API JSON) et assets (JS, CSS)
-  src/          authentification, rôles (rbac), comptes, paramètres, SMTP, actions, collecteurs
-  bin/          collecteur (root), schéma SQL, gestion des comptes en ligne de commande
-system/         helper root, commande hostkeep, sudoers, PHP-FPM, services et timers systemd, fail2ban, logrotate
-docs/           captures d'écran et maquettes d'étude (docs/mockups)
-install.sh      installateur (une ligne, deps, app, web, admin, status, uninstall)
-.env.example    configuration du serveur, commentée
+  public/         pages servies : index, connexion, 2fa.php (double authentification), mot de passe, API JSON, assets (JS, CSS)
+  src/            auth.php, totp.php (TOTP + QR code), rbac.php, users.php, settings.php, mailer.php,
+                  notify.php (Discord, Telegram, webhook, ping externe), actions.php, overview.php (alertes, prévision disque),
+                  webservers.php (sites Apache / Nginx / Caddy), collect_extra.php (sauvegardes, trafic, audit),
+                  offsite.php (copie externe rclone), migration.php (archive de migration)
+  bin/            collecteur (root), schéma SQL, comptes en ligne de commande (user.php)
+system/
+  hostkeep-action helper root (liste blanche d'actions), hostkeep-cli (commande « hostkeep »), restore.sh (migration)
+  hardening/      corrections de l'audit : en-têtes, fichiers sensibles, version (Apache, Nginx, bloc Caddy)
+  systemd/        service, timers de collecte, de sauvegarde et d'audit
+  …               sudoers, PHP-FPM dédié, fail2ban, logrotate, MariaDB, Apache
+docs/             RESTORE.md (notice de l'archive de migration), captures d'écran, maquettes
+install.sh        installateur (une ligne, deps, app, web, admin, status, uninstall)
+.env.example      configuration du serveur, commentée
 ```
 
 L'historique des versions est dans [`CHANGELOG.md`](CHANGELOG.md).

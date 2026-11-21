@@ -2,8 +2,9 @@
 declare(strict_types=1);
 
 /**
- * Sites served by Apache and / or Nginx, in one common shape (collector, run as root):
- *   name, aliases[], ports[], https, docroot, cert (file), confs[] ("apache:file" / "nginx:file"), server (apache|nginx), sockets[] (PHP-FPM)
+ * Sites served by Apache, Nginx and / or Caddy, in one common shape (collector, run as root):
+ *   name, aliases[], ports[], https, docroot, cert (file), confs[] ("apache:file" / "nginx:file" / "caddy:file"), server (apache|nginx|caddy), sockets[] (PHP-FPM)
+ * Caddy: the running config (admin API on localhost:2019), else « caddy adapt » of /etc/caddy/Caddyfile.
  * Apache: « apache2ctl -S » + the vhost block. Nginx: « nginx -T » parsed into a directive tree
  * (includes such as snippets/*.conf are followed, so roots and fastcgi_pass found there count too).
  */
@@ -11,7 +12,7 @@ declare(strict_types=1);
 function web_vhosts(): array
 {
     $sites = [];
-    foreach ([...nginx_vhosts(), ...apache_vhosts()] as $v) {
+    foreach ([...nginx_vhosts(), ...apache_vhosts(), ...caddy_vhosts()] as $v) {
         $s = &$sites[$v['name']];
         if ($s === null) {
             $s = $v;
@@ -36,6 +37,92 @@ function web_vhosts(): array
 function web_real_name(string $n): bool
 {
     return $n !== '' && $n !== '_' && $n !== 'localhost' && !preg_match('/^(\d+\.){3}\d+$|^\[|[*~^$()]|:/', $n) && str_contains($n, '.');
+}
+
+/* ---------- Caddy ---------- */
+
+const CADDYFILE = '/etc/caddy/Caddyfile';
+const CADDY_CERTS = '/var/lib/caddy/.local/share/caddy/certificates';
+
+function caddy_active(): bool
+{
+    return trim(sh('systemctl is-active caddy')) === 'active';
+}
+
+/** Caddy's JSON config: what runs now (admin API), else the Caddyfile adapted. [] when Caddy is not there. */
+function caddy_config(): array
+{
+    static $cfg = null;
+    if ($cfg !== null) {
+        return $cfg;
+    }
+    $cfg = [];
+    if (!caddy_active()) {
+        return $cfg;
+    }
+    $c = json_decode(sh('curl -s --max-time 3 http://127.0.0.1:2019/config/'), true);
+    if (!is_array($c) && is_file(CADDYFILE)) {
+        $c = json_decode(sh('caddy adapt --config ' . escapeshellarg(CADDYFILE)), true);
+    }
+    return $cfg = is_array($c) ? $c : [];
+}
+
+/** Walks the handlers of a route (subroutes included): root folder, PHP sockets, proxy upstreams. */
+function caddy_walk(array $handles, array &$info): void
+{
+    foreach ($handles as $h) {
+        switch ($h['handler'] ?? '') {
+            case 'vars':
+                $info['root'] ??= $h['root'] ?? null;
+                break;
+            case 'file_server':
+                $info['root'] ??= $h['root'] ?? null;
+                $info['files'] = true;
+                break;
+            case 'reverse_proxy':
+                foreach ($h['upstreams'] ?? [] as $u) {
+                    $dial = (string) ($u['dial'] ?? '');
+                    if (($h['transport']['protocol'] ?? '') === 'fastcgi') {
+                        $info['sockets'][] = preg_replace('#^unix/#', '', $dial);
+                    } else {
+                        $info['proxy'] ??= $dial;
+                    }
+                }
+                break;
+            case 'subroute':
+                foreach ($h['routes'] ?? [] as $r) {
+                    caddy_walk($r['handle'] ?? [], $info);
+                }
+                break;
+        }
+    }
+}
+
+function caddy_vhosts(): array
+{
+    $sites = [];
+    foreach (caddy_config()['apps']['http']['servers'] ?? [] as $srv) {
+        $ports = array_map(fn($l) => (int) (preg_match('/(\d+)(-\d+)?$/', (string) $l, $m) ? $m[1] : 443), $srv['listen'] ?? [':443']);
+        $plain = in_array(80, $ports, true) && !in_array(443, $ports, true);
+        foreach ($srv['routes'] ?? [] as $route) {
+            $hosts = [];
+            foreach ($route['match'] ?? [] as $m) {
+                $hosts = array_merge($hosts, $m['host'] ?? []);
+            }
+            $hosts = array_values(array_filter(array_unique($hosts), 'web_real_name'));
+            if (!$hosts) {
+                continue;
+            }
+            $info = ['root' => null, 'proxy' => null, 'sockets' => [], 'files' => false];
+            caddy_walk($route['handle'] ?? [], $info);
+            $main = $hosts[0];
+            $cert = $plain ? null : (glob(CADDY_CERTS . '/*/' . $main . '/' . $main . '.crt')[0] ?? null);
+            $sites[$main] = ['name' => $main, 'aliases' => array_slice($hosts, 1), 'ports' => $ports, 'https' => !$plain, 'server' => 'caddy',
+                'docroot' => $info['root'] ?? ($info['proxy'] ? 'proxy → ' . $info['proxy'] : null), 'cert' => $cert,
+                'confs' => ['caddy:' . basename(CADDYFILE)], 'sockets' => array_values(array_unique($info['sockets']))];
+        }
+    }
+    return array_values($sites);
 }
 
 /* ---------- Apache ---------- */

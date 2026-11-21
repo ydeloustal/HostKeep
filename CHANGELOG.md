@@ -5,6 +5,13 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouté
+- **Sites servis par Caddy** : découverts depuis la configuration en cours (API d'admin) ou le Caddyfile (`caddy adapt`) ; disponibilité, temps de réponse, racine, sockets PHP-FPM, proxy ; certificats obtenus par Caddy suivis (colonne « Géré par ») ; `/etc/caddy` ajouté aux sauvegardes de fichiers.
+- Audit : pour Caddy, bloc `(hostkeep_securite)` prêt à coller (en-têtes sans écraser ceux des sites, fichiers sensibles en 403).
+
+### Documentation
+- README : tableau de compatibilité Apache / Nginx / Caddy / proxy, structure du dépôt à jour.
+
 ## [2.8.0] — 2026-11-21
 
 ### Ajouté
