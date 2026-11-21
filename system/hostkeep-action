@@ -6,6 +6,7 @@
 #   hostkeep-action job <verb> [args...]   validate, then run in the background (systemd-run), print the job id
 #   hostkeep-action log <key> [lines]      print the tail of an allowed log
 #   hostkeep-action backup-stream <day> [archive]   a whole backup day as tar, or one files/<archive>.tar.gz, on stdout
+#   hostkeep-action export-bundle < config.json      migration archive (.tar.gz) on stdout: source code, config, restore.sh
 #
 # Never touches: sshd, network, firewall, certificate deletion. Reboot only through the "reboot" job.
 set -uo pipefail
@@ -280,6 +281,35 @@ case $cmd in
         pm2 logs "$a" --lines "$n" --nostream --raw 2>&1 ;;
       *) die "journal inconnu" ;;
     esac ;;
+  export-bundle)
+    # stdin: JSON written by the panel (app/src/migration.php): manifest, settings without secrets, encrypted accounts
+    src=$(source_dir) || die "$src"
+    tmp=$(mktemp -d) || die "mktemp"
+    trap 'rm -rf "$tmp"' EXIT
+    head -c 5000000 > "$tmp/in.json"
+    name="hostkeep-migration-$(hostname -s)-$(date +%F)"
+    mkdir -p "$tmp/$name/source" "$tmp/$name/config" && chmod 700 "$tmp/$name"
+    git -C "$src" archive --format=tar HEAD | tar -x -C "$tmp/$name/source" || die "git archive"
+    python3 -I - "$tmp/in.json" "$tmp/$name/config" "$(git -C "$src" rev-parse HEAD)" "$(git -C "$src" rev-parse --abbrev-ref HEAD)" \
+      "$(git -C "$src" remote get-url origin 2>/dev/null)" <<'PY' || die "configuration illisible"
+import json, os, sys
+src, out, commit, branch, repo = sys.argv[1:6]
+d = json.load(open(src))
+m = d["manifest"]
+m.update({"commit": commit, "branch": branch, "repo": repo})
+def write(name, obj):
+    with open(os.path.join(out, name), "w") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+write("manifest.json", m)
+write("settings.json", d.get("settings") or {})
+if d.get("accounts"):
+    write("accounts.json.enc", d["accounts"])
+PY
+    # .env without anything secret (the key of the encrypted settings is regenerated on the new server)
+    grep -vE '^[[:space:]]*(HOSTKEEP_APP_KEY|[A-Z_]*(PASSWORD|SECRET|TOKEN|_KEY)[A-Z_]*)[[:space:]]*=' "$APP/.env" > "$tmp/$name/config/env.public" 2>/dev/null || true
+    install -m 755 "$src/system/restore.sh" "$tmp/$name/restore.sh"
+    install -m 644 "$src/docs/RESTORE.md" "$tmp/$name/RESTORE.md"
+    tar -cz -C "$tmp" "$name" ;;
   fs-roots)
     printf '%s\n' $FS_ROOTS ;;
   backup-stream)

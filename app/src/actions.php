@@ -89,11 +89,16 @@ function backup_stream(string $day, string $item): never
     helper_stream(['backup-stream', $day, ...($item !== '' ? [$item] : [])], $item !== '' ? "$item-$day.tar.gz" : "hostkeep-$host-$day.tar");
 }
 
-/** Runs the root helper and sends its stdout as a download, without loading it in memory. */
-function helper_stream(array $args, string $name): never
+/** Runs the root helper and sends its stdout as a download, without loading it in memory. $stdin: data given to it first. */
+function helper_stream(array $args, string $name, ?string $stdin = null): never
 {
     set_time_limit(0);
-    $p = proc_open(['/usr/bin/sudo', '-n', HELPER, ...$args], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    $spec = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']] + ($stdin !== null ? [0 => ['pipe', 'r']] : []);
+    $p = proc_open(['/usr/bin/sudo', '-n', HELPER, ...$args], $spec, $pipes);
+    if ($stdin !== null) {
+        fwrite($pipes[0], $stdin);
+        fclose($pipes[0]);
+    }
     $first = fread($pipes[1], 8192);
     if ($first === '' || $first === false) {
         $err = stream_get_contents($pipes[2]);

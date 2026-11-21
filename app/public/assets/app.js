@@ -675,6 +675,11 @@ B.panel = async () => {
       d.dirty ? el('div', { class: 'alert warn' }, badge('attention', 'warn'), el('span', {}, `Des fichiers ont été modifiés à la main dans ${d.source} : la mise à jour sera refusée.`)) : null,
       n ? card('À installer', table(['Commit', 'Date', 'Description'], d.behind.map(c => [el('span', { class: 'mono' }, c.hash), fmtDate(c.ts), c.subject]))) : null,
       d.previous ? note(`Version précédente gardée pour un retour arrière : ${d.previous.hash} (${fmtDate(d.previous.ts)}) — ${d.previous.subject}.`) : null,
+      can('panel.update') ? card('Archive de migration', [
+        el('p', {}, 'Un seul fichier pour réinstaller ce panel à l\'identique sur un autre serveur : le code de la version installée, les réglages (sans aucun secret), les comptes si tu veux (chiffrés), et restore.sh qui fait tout en une commande.'),
+        el('div', { class: 'form-actions' }, el('button', { class: 'btn', type: 'button', onclick: exportBundle }, icon('install'), 'Télécharger l\'archive de migration…')),
+        note('Les données du serveur (sites, bases, certificats) ne sont pas dedans : elles passent par les sauvegardes (Données › Sauvegardes, copie externe).'),
+      ]) : null,
       note('git pull (avance rapide uniquement) dans le dépôt source, puis ./install.sh app : la configuration (.env) et le mot de passe sont conservés. Après une mise à jour, « Revenir à… » réinstalle la version d\'avant.'),
       stale(s.updated),
     ],
@@ -1075,6 +1080,28 @@ function settingsBlock(gid) {
       gid === 'offsite' ? note('Enregistre, puis « Tester la connexion ». Les envois suivent chaque sauvegarde ; une copie ratée est retentée toutes les heures. Sur un nouveau serveur : « sudo hostkeep restore fetch » liste les jours disponibles et en rapatrie un.') : null,
       gid === 'security' ? note('Les échecs de connexion sont aussi transmis à fail2ban (jail « hostkeep »), qui bannit l\'adresse au niveau du pare-feu.') : null];
   };
+}
+/* Classic form POST so that the browser saves the answer as a file (the archive is streamed by the root helper). */
+function exportBundle() {
+  const acc = el('input', { type: 'checkbox', name: 'accounts', value: '1' });
+  const p1 = el('input', { type: 'password', name: 'passphrase', autocomplete: 'new-password', minlength: 12, disabled: true });
+  const p2 = el('input', { type: 'password', name: 'passphrase2', autocomplete: 'new-password', minlength: 12, disabled: true });
+  const err = el('p', { class: 'field-error', hidden: true });
+  const pass = el('div', { hidden: true }, el('div', { class: 'field' }, el('label', {}, 'Phrase de passe (12 caractères minimum)'), p1),
+    el('div', { class: 'field' }, el('label', {}, 'Encore une fois'), p2),
+    note('Demandée par restore.sh pour importer les comptes. Elle n\'est conservée nulle part : sans elle, les comptes sont perdus (les réglages, eux, restent importables).'));
+  acc.onchange = () => { pass.hidden = !acc.checked; p1.disabled = p2.disabled = !acc.checked; };
+  const form = el('form', { class: 'form', method: 'post', action: '/api.php?r=panel.export' },
+    el('input', { type: 'hidden', name: 'csrf', value: document.querySelector('meta[name="csrf"]').content }),
+    el('div', { class: 'field check' }, el('label', {}, acc, el('span', {}, 'Inclure les comptes (identifiants, e-mails, rôles, mots de passe hachés), chiffrés'))),
+    pass, err,
+    note('Jamais dans l\'archive : mots de passe SMTP, clés de sauvegarde externe, URL d\'alertes et de ping, secrets de double authentification. restore.sh liste ce qu\'il faudra ressaisir.'),
+    el('div', { class: 'form-actions' }, el('button', { class: 'btn primary', type: 'submit' }, 'Télécharger')));
+  form.onsubmit = e => {
+    if (acc.checked && (p1.value.length < 12 || p1.value !== p2.value)) { e.preventDefault(); err.textContent = 'Au moins 12 caractères, identiques dans les deux champs.'; err.hidden = false; return; }
+    setTimeout(() => { closeModal(); toast('Archive en préparation : le téléchargement démarre dans un instant.', 'ok'); }, 300);
+  };
+  openModal('Archive de migration', form);
 }
 async function testNotify() {
   try {
