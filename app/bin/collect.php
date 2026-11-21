@@ -189,7 +189,7 @@ function c_sites(): void
         }
     }
     save('sites', ['sites' => array_values($sites), 'disabled' => $disabled, 'self' => 'hostkeep',
-        'servers' => array_keys(array_filter(['apache' => trim(sh('systemctl is-active apache2')) === 'active', 'nginx' => nginx_dump() !== []])),
+        'servers' => array_keys(array_filter(['apache' => trim(sh('systemctl is-active apache2')) === 'active', 'nginx' => nginx_dump() !== [], 'caddy' => caddy_config() !== []])),
         'untracked' => nginx_untracked_sites(), 'traffic_logs' => traffic_logs()]);
 }
 
@@ -197,12 +197,15 @@ function c_certs(): void
 {
     $now = time();
     $certs = [];
-    foreach (glob('/etc/letsencrypt/live/*/cert.pem') ?: [] as $f) {
+    // Let's Encrypt (certbot), then the certificates Caddy obtains and renews by itself
+    foreach ([...(glob('/etc/letsencrypt/live/*/cert.pem') ?: []), ...(glob(CADDY_CERTS . '/*/*/*.crt') ?: [])] as $f) {
         $o = sh('openssl x509 -noout -enddate -ext subjectAltName -in ' . escapeshellarg($f));
         preg_match('/notAfter=(.+)/', $o, $x);
         preg_match_all('/DNS:([^,\s]+)/', $o, $d);
         $end = isset($x[1]) ? (strtotime(trim($x[1])) ?: 0) : 0;
-        $certs[] = ['name' => basename(dirname($f)), 'domains' => $d[1], 'expires' => $end, 'days' => (int) floor(($end - $now) / 86400)];
+        $caddy = str_starts_with($f, CADDY_CERTS);
+        $certs[] = ['name' => basename(dirname($f)), 'domains' => $d[1], 'expires' => $end, 'days' => (int) floor(($end - $now) / 86400),
+            'by' => $caddy ? 'caddy' : 'certbot'];
     }
     usort($certs, fn($a, $b) => $a['days'] <=> $b['days']);
     save('certs', ['certs' => $certs]);

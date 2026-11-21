@@ -8,6 +8,7 @@ declare(strict_types=1);
  */
 require __DIR__ . '/../src/bootstrap.php';
 require __DIR__ . '/../src/auth.php';
+require __DIR__ . '/../src/pwa.php';
 
 security_headers();
 enforce_ip_allowlist();
@@ -82,8 +83,8 @@ $account = $me['username'] . '@' . $host;
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>Double authentification · <?= h($name) ?></title>
-<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/assets/app.css">
+<?= pwa_head($name) ?>
+<link rel="stylesheet" href="<?= h(asset('/assets/app.css')) ?>">
 </head>
 <body class="login-page">
 <main class="login-card wide">
@@ -155,6 +156,6 @@ $account = $me['username'] . '@' . $host;
     <p class="login-links"><a href="/#account">Retour au panel</a></p>
   <?php endif; ?>
 </main>
-<script src="/assets/login.js"></script>
+<script src="<?= h(asset('/assets/login.js')) ?>"></script>
 </body>
 </html>
