@@ -22,6 +22,7 @@ const ACTIONS = [
     'reboot'         => [],
     'offsite-test'   => [],
     'offsite-now'    => [],
+    'harden'         => ['headers|sensitive|tokens', 'on|off'],
     'self-update'    => [],
     'self-rollback'  => [],
     'web-domain'     => ['(?=.{4,253}$)([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}'],

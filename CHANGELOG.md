@@ -5,6 +5,13 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Ajouté
+- **Audit actionnable** (*Sécurité › Audit*) : carte « Corrections automatiques » et bouton **Corriger** sur les constats concernés. Trois corrections globales et réversibles : en-têtes de sécurité (Apache `setifempty`, HSTS seulement en HTTPS, 6 mois), fichiers sensibles bloqués (`.env`, `.git`, dumps, `composer.json`, phpinfo, listes de dossiers), version du serveur masquée. Chacune : un fichier, `configtest` / `nginx -t`, retour arrière automatique, rechargement, nouvel audit et compte rendu (avec, pour Nginx, la ligne `include` à ajouter et les fichiers concernés). Bouton **Retirer**.
+- **Prévision du disque** : tendance du remplissage de `/` sur 30 jours (pic quotidien, moindres carrés), affichée sur l'accueil et dans *Système › Stockage* ; alerte sous 14 jours, critique sous 3.
+
+### Modifié
+- `system/apache-hardening.conf` déplacé dans `system/hardening/` (avec les nouveaux fichiers), bloque aussi `composer.json` / `composer.lock`. Les fichiers de correction sont installés dans `/usr/local/share/hostkeep/hardening/`.
+
 ## [2.7.0] — 2026-11-21
 
 ### Ajouté

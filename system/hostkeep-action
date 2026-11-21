@@ -68,6 +68,8 @@ validate() {
       return 0 ;;
     certbot)
       [[ $# -eq 1 ]] && in_list "$1" dry-run renew || die "action certbot" ;;
+    harden)   # harden headers|sensitive|tokens on|off
+      [[ $# -eq 2 ]] && in_list "$1" headers sensitive tokens && in_list "$2" on off || die "arguments" ;;
     web-domain)
       [[ $# -eq 1 && ${#1} -le 253 && $1 =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]] || die "nom de domaine invalide" ;;
     apt-clean|journal-vacuum|collect-now|backup-now|security-scan|apt-update|apt-upgrade|self-update|self-rollback|reboot|offsite-test|offsite-now)
@@ -95,6 +97,81 @@ source_dir() {
 }
 
 configtest() { echo "# apache2ctl configtest"; apache2ctl configtest 2>&1 | grep -v AH00558; return "${PIPESTATUS[0]}"; }
+
+# ---------- audit fixes (Sécurité › Audit › Corriger): one global file per fix, checked, rolled back on error ----------
+HARDEN_SRC=/usr/local/share/hostkeep/hardening
+has_apache() { [[ -d /etc/apache2/conf-available ]] && command -v a2enconf >/dev/null && systemctl is-active --quiet apache2; }
+has_nginx() { [[ -d /etc/nginx/conf.d ]] && command -v nginx >/dev/null && systemctl is-active --quiet nginx; }
+# harden_apache <conf name> <source file> on|off
+harden_apache() {
+  local name=$1 src=$2 f=/etc/apache2/conf-available/$1.conf prev='' mod=0
+  if [[ $3 == on ]]; then
+    [[ -f $HARDEN_SRC/$src ]] || { echo "$HARDEN_SRC/$src manquant : lance « sudo hostkeep update »."; return 1; }
+    [[ -f $f ]] && prev=$(cat "$f")
+    if [[ $name == hostkeep-headers ]] && ! a2query -m headers >/dev/null 2>&1; then echo "# a2enmod headers"; a2enmod -q headers >/dev/null && mod=1; fi
+    echo "# Apache : $f + a2enconf $name"
+    install -m 644 "$HARDEN_SRC/$src" "$f" && a2enconf -q "$name" >/dev/null
+    if ! configtest; then
+      echo "configtest en échec : retour arrière, rien n'a changé."
+      a2disconf -q "$name" >/dev/null 2>&1; if [[ -n $prev ]]; then printf '%s\n' "$prev" > "$f"; else rm -f "$f"; fi
+      ((mod)) && a2dismod -q headers >/dev/null
+      return 1
+    fi
+  else
+    [[ -e /etc/apache2/conf-enabled/$name.conf ]] || { echo "Apache : $name n'était pas actif."; return 0; }
+    echo "# a2disconf $name"; a2disconf -q "$name" >/dev/null
+    if ! configtest; then echo "configtest en échec : retour arrière."; a2enconf -q "$name" >/dev/null; return 1; fi
+  fi
+  echo "# systemctl reload apache2"; systemctl reload apache2 && sleep 2   # graceful: let the new workers take over before the check
+}
+# harden_nginx on|off <destination>=<source> [...]   (conf.d files are loaded; snippets only where included)
+harden_nginx() {
+  local mode=$1 pair dst src bak; shift
+  bak=$(mktemp -d)
+  for pair in "$@"; do
+    dst=${pair%%=*}; src=${pair#*=}
+    [[ -f $dst ]] && cp -p "$dst" "$bak/$(basename "$dst")"
+    if [[ $mode == on ]]; then
+      [[ -f $HARDEN_SRC/$src ]] || { echo "$HARDEN_SRC/$src manquant : lance « sudo hostkeep update »."; rm -rf "$bak"; return 1; }
+      mkdir -p "$(dirname "$dst")"; echo "# Nginx : $dst"; install -m 644 "$HARDEN_SRC/$src" "$dst"
+    else
+      [[ -f $dst ]] && { echo "# Nginx : rm $dst"; rm -f "$dst"; }
+    fi
+  done
+  echo "# nginx -t"
+  if ! nginx -t 2>&1; then
+    echo "nginx -t en échec : retour arrière, rien n'a changé."
+    for pair in "$@"; do dst=${pair%%=*}; if [[ -f $bak/$(basename "$dst") ]]; then cp -p "$bak/$(basename "$dst")" "$dst"; else rm -f "$dst"; fi; done
+    [[ $mode == off ]] && echo "(un site inclut sans doute encore un snippet Hostkeep : retire la ligne « include snippets/hostkeep-… » de sa config d'abord)"
+    rm -rf "$bak"; return 1
+  fi
+  rm -rf "$bak"
+  echo "# systemctl reload nginx"; systemctl reload nginx && sleep 2   # the old workers finish first
+}
+harden() {
+  local kind=$1 mode=$2 seen=0 rc=0
+  if has_apache; then
+    case $kind in
+      headers) harden_apache hostkeep-headers apache-headers.conf "$mode" || rc=1 ;;
+      tokens) harden_apache zz-hostkeep-tokens apache-tokens.conf "$mode" || rc=1 ;;
+      sensitive) harden_apache hardening apache-hardening.conf "$mode" || rc=1 ;;
+    esac
+    seen=1
+  fi
+  if has_nginx; then
+    case $kind in
+      headers) harden_nginx "$mode" /etc/nginx/conf.d/hostkeep-security-headers.conf=nginx-headers.conf /etc/nginx/snippets/hostkeep-headers.conf=nginx-headers-snippet.conf || rc=1 ;;
+      tokens) harden_nginx "$mode" /etc/nginx/conf.d/hostkeep-tokens.conf=nginx-tokens.conf || rc=1 ;;
+      sensitive) harden_nginx "$mode" /etc/nginx/snippets/hostkeep-deny.conf=nginx-deny.conf || rc=1 ;;
+    esac
+    seen=1
+  fi
+  ((seen)) || { echo "Ni Apache ni Nginx sur ce serveur : rien à corriger ici."; return 1; }
+  echo; echo "# Nouvel audit pour vérifier"
+  php "$APP/bin/collect.php" scan
+  if ((rc)); then echo "Échec : la configuration d'avant est conservée (voir ci-dessus)."; else php "$APP/bin/collect.php" harden-report "$kind" "$mode"; fi
+  return "$rc"
+}
 
 run() {
   local verb=$1; shift
@@ -154,6 +231,8 @@ run() {
       php "$APP/bin/collect.php" backup-list >/dev/null 2>&1; echo "Restauration terminée." ;;
     security-scan)
       php "$APP/bin/collect.php" scan ;;
+    harden)
+      harden "$1" "$2" ;;
     offsite-test)
       php "$APP/bin/collect.php" offsite-test ;;
     offsite-now)

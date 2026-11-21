@@ -10,7 +10,7 @@ const can = perm => ME.perms.includes(perm);
 const VERB_PERMS = {
   'collect-now': 'actions.routine', 'security-scan': 'actions.routine', 'apt-update': 'actions.routine', 'backup-now': 'actions.routine', 'offsite-now': 'actions.routine', 'certbot:dry-run': 'actions.routine',
   service: 'actions.services', 'pm2-restart': 'actions.services', 'f2b-unban': 'actions.services',
-  site: 'actions.system', 'certbot:renew': 'actions.system', 'apt-clean': 'actions.system', 'journal-vacuum': 'actions.system', 'apt-upgrade': 'actions.system', 'backup-restore': 'actions.system', reboot: 'actions.system', 'offsite-test': 'actions.system',
+  site: 'actions.system', 'certbot:renew': 'actions.system', 'apt-clean': 'actions.system', 'journal-vacuum': 'actions.system', 'apt-upgrade': 'actions.system', 'backup-restore': 'actions.system', reboot: 'actions.system', 'offsite-test': 'actions.system', harden: 'actions.system',
   'self-update': 'panel.update', 'self-rollback': 'panel.update', 'web-domain': 'panel.update',
 };
 const canVerb = (verb, args = []) => can(VERB_PERMS[`${verb}:${args[0] ?? ''}`] || VERB_PERMS[verb] || 'none');
@@ -356,7 +356,7 @@ B.summary = async () => {
     box.replaceChildren(
       stat('CPU', `${l.cpu.toFixed(0)} %`, `charge ${l.load1.toFixed(2)} · ${plural(l.cores, 'cœur')}`, l.cpu, '', h('cpu')),
       stat('RAM', `${pct(memUsed, l.mem_total).toFixed(0)} %`, `${fmtBytes(memUsed)} / ${fmtBytes(l.mem_total)}`, pct(memUsed, l.mem_total), '', h('mem')),
-      stat('Disque', m.disk_total ? `${pct(m.disk_used, m.disk_total).toFixed(0)} %` : '–', m.disk_total ? `${fmtBytes(m.disk_total - m.disk_used)} libres sur ${fmtBytes(m.disk_total)}` : 'en attente', m.disk_total ? pct(m.disk_used, m.disk_total) : undefined),
+      stat('Disque', m.disk_total ? `${pct(m.disk_used, m.disk_total).toFixed(0)} %` : '–', m.disk_total ? `${fmtBytes(m.disk_total - m.disk_used)} libres sur ${fmtBytes(m.disk_total)}${forecastText(ov.disk_forecast, true)}` : 'en attente', m.disk_total ? pct(m.disk_used, m.disk_total) : undefined),
       stat('Réseau', `↓ ${fmtRate(l.net_rx)}`, `↑ ${fmtRate(l.net_tx)}`, undefined, '', h('net')),
       stat('Sites en ligne', `${ov.sites_up} / ${ov.sites_total}`, down ? `${plural(down, 'site')} injoignable${down > 1 ? 's' : ''}` : 'tous répondent', undefined, down ? 'bad' : ''),
     );
@@ -587,13 +587,22 @@ B.perf = async () => {
   ];
 };
 
+/* "Full in ~12 days" from the 30-day trend (overview.php disk_forecast). */
+function forecastText(f, short = false) {
+  if (!f) return short ? '' : 'pas encore assez de mesures (3 jours)';
+  if (f.days === null) return short ? '' : `stable (${f.per_day >= 0 ? '+' : ''}${fmtBytes(f.per_day)} / jour)`;
+  const when = f.days < 1 ? 'moins d\'un jour' : f.days > 365 ? 'plus d\'un an' : `~${plural(f.days, 'jour')}`;
+  return short ? ` · plein dans ${when}` : `plein dans ${when} (+${fmtBytes(f.per_day)} / jour)`;
+}
 B.storage = async () => {
-  const s = await section('storage');
+  const [s, ov] = await Promise.all([section('storage'), api({ r: 'overview' })]);
   const d = s.data || {};
+  const f = ov.disk_forecast;
   const maxDir = Math.max(1, ...(d.dirs || []).map(x => x.size));
   return {
     actions: [actionBtn('Vider le cache apt', 'apt-clean', [], { confirm: 'Vider le cache apt ?' }), actionBtn('Réduire le journal', 'journal-vacuum', [], { confirm: 'Réduire le journal systemd à 50 Mo ?' })],
     body: [
+      stats(stat('Prévision pour /', f?.days != null ? (f.days > 365 ? '> 1 an' : plural(f.days, 'jour')) : f ? 'stable' : '–', forecastText(f), undefined, f?.days != null && f.days < 14 ? 'bad' : '')),
       card(null, table(['Montage', 'Type', { label: 'Taille', num: true }, { label: 'Libre', num: true }, 'Remplissage'],
         (d.df || []).map(p => [el('div', {}, el('strong', {}, p.target), el('div', { class: 'mono small muted' }, p.source)), p.fstype, fmtBytes(p.size), fmtBytes(p.avail), el('div', { class: 'fill' }, `${p.pct} %`, bar(p.pct))]))),
       el('div', { class: 'grid2' },
@@ -604,6 +613,33 @@ B.storage = async () => {
   };
 };
 
+/* Audit fixes: one global, reversible file per fix (root helper « harden »), checked by configtest / nginx -t. */
+const FIXES = {
+  headers: { label: 'En-têtes de sécurité', desc: 'X-Content-Type-Options, X-Frame-Options, Referrer-Policy, et HSTS en HTTPS (6 mois). Jamais à la place d\'un en-tête déjà envoyé par un site.' },
+  sensitive: { label: 'Fichiers sensibles bloqués', desc: '.env, .git, dumps SQL, sauvegardes, composer.json, phpinfo et listes de dossiers refusés (403). Le code PHP les lit toujours normalement.' },
+  tokens: { label: 'Version du serveur masquée', desc: 'Apache (ServerTokens Prod) et Nginx (server_tokens off) n\'affichent plus leur version.' },
+};
+const fixFor = f => f.title === 'En-têtes de sécurité manquants' ? 'headers'
+  : /affiche sa version/.test(f.title) ? 'tokens'
+  : /téléchargeable|lisible|Liste du dossier|phpinfo/.test(f.title) ? 'sensitive' : null;
+const fixBtn = (k, label = 'Appliquer', off = false) => actionBtn(label, 'harden', [k, off ? 'off' : 'on'], {
+  cls: off ? '' : 'primary',
+  confirm: off ? `Retirer « ${FIXES[k].label} » ? La configuration d'origine est remise et le serveur web rechargé.`
+    : `Appliquer « ${FIXES[k].label} » à tous les sites ?\n\n${FIXES[k].desc}\n\nUn seul fichier de configuration est ajouté, vérifié (configtest / nginx -t) puis retiré automatiquement en cas d'erreur. L'audit est relancé ensuite.`,
+});
+function fixesCard(scan) {
+  const h = scan.hardening || {}, srv = h.servers || {};
+  if (!srv.apache && !srv.nginx) return null;
+  const left = k => scan.findings.filter(f => fixFor(f) === k).length;
+  return card('Corrections automatiques', [
+    table(['Correction', 'État', ''], Object.entries(FIXES).map(([k, f]) => [
+      el('div', {}, el('strong', {}, f.label), el('div', { class: 'muted small' }, f.desc)),
+      h[k] ? [badge('appliquée', 'ok'), left(k) ? el('div', { class: 'small muted' }, `${plural(left(k), 'constat')} restant${left(k) > 1 ? 's' : ''}`) : null]
+        : left(k) ? badge(plural(left(k), 'constat'), 'warn') : el('span', { class: 'muted small' }, 'rien à corriger'),
+      h[k] ? fixBtn(k, 'Retirer', true) : (left(k) ? fixBtn(k) : null)])),
+    srv.nginx ? note('Nginx : les en-têtes globaux ne s\'appliquent pas aux blocs qui ont leurs propres add_header, et le blocage des fichiers sensibles demande une ligne « include » par site. Après « Appliquer », le compte rendu liste les fichiers où l\'ajouter.') : null,
+  ]);
+}
 B.audit = async () => {
   const [s, sc] = await Promise.all([section('security'), section('secscan')]);
   const d = s.data || {}, scan = sc.data;
@@ -627,10 +663,15 @@ B.audit = async () => {
         stat('IP bannies', (d.jails || []).reduce((n, j) => n + j.banned_now, 0), `${(d.jails || []).reduce((n, j) => n + j.banned_total, 0)} au total`)),
       d.reboot_hint ? note(d.reboot_hint) : null,
       d.since_reboot ? note('Le serveur vient de redémarrer : le reste de cette page sera à jour au prochain passage du collecteur (moins de 5 min).') : null,
+      scan ? fixesCard(scan) : null,
       card('Constats', [
-        scan ? table(['Gravité', 'Site', 'Constat', 'Détail'], scan.findings.map(f => [badge(...SEV[f.severity]), el('strong', {}, f.site), f.title, el('span', { class: 'mono small' }, f.detail)]), 'Aucun problème trouvé.')
+        scan ? table(['Gravité', 'Site', 'Constat', 'Détail', ''], scan.findings.map(f => {
+          const k = fixFor(f), on = scan.hardening?.[k];
+          return [badge(...SEV[f.severity]), el('strong', {}, f.site), f.title, el('span', { class: 'mono small' }, f.detail),
+            k ? (on ? el('span', { class: 'muted small', title: 'Correction déjà appliquée : ce site envoie ses propres règles, ou (Nginx) doit inclure le snippet.' }, 'voir ci-dessus') : fixBtn(k, 'Corriger')) : null];
+        }), 'Aucun problème trouvé.')
           : emptyState('Pas encore de scan (chaque nuit à 4 h 20).'),
-        note('Cherche fichiers sensibles exposés (.env, .git, dumps…), dossiers listables, en-têtes, ports et config SSH/Apache. Lecture seule.'),
+        note('Cherche fichiers sensibles exposés (.env, .git, dumps…), dossiers listables, en-têtes, ports et config SSH/Apache. Le scan ne modifie rien ; seuls les boutons « Corriger » changent la configuration.'),
       ]),
       stale(s.updated),
     ],

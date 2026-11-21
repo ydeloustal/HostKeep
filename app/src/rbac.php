@@ -40,7 +40,7 @@ const ACTION_PERMS = [
     'backup-now' => 'actions.routine', 'offsite-now' => 'actions.routine', 'certbot:dry-run' => 'actions.routine',
     'service' => 'actions.services', 'pm2-restart' => 'actions.services', 'f2b-unban' => 'actions.services',
     'site' => 'actions.system', 'certbot:renew' => 'actions.system', 'apt-clean' => 'actions.system', 'journal-vacuum' => 'actions.system',
-    'apt-upgrade' => 'actions.system', 'backup-restore' => 'actions.system', 'reboot' => 'actions.system', 'offsite-test' => 'actions.system',
+    'apt-upgrade' => 'actions.system', 'backup-restore' => 'actions.system', 'reboot' => 'actions.system', 'offsite-test' => 'actions.system', 'harden' => 'actions.system',
     'self-update' => 'panel.update', 'self-rollback' => 'panel.update', 'web-domain' => 'panel.update',
 ];
 
