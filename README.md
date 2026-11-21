@@ -79,8 +79,8 @@ L'installateur détecte le système (Debian 12/13, Ubuntu 22.04/24.04), installe
 |---|---|---|
 | **Accueil** | L'état général en une phrase, les alertes triées par gravité, CPU / RAM / disque / réseau en direct, l'historique de 1 h à 30 j, les processus gourmands | Lancer les contrôles courants en un geste : sites, sauvegarde, mises à jour, audit |
 | **Sites** | Sites Apache **et** Nginx (lus dans leur configuration), code HTTP, temps de réponse, disponibilité sur 7 j, certificats Let's Encrypt, trafic (visiteurs, robots, 404/5xx, pages, référents) | Contrôler les sites, activer ou désactiver un vhost, tester et renouveler les certificats |
-| **Système** | Services systemd, applis PM2, timers et crontabs, pools PHP-FPM, requêtes MariaDB lentes, partitions et gros dossiers | Redémarrer ou recharger un service, redémarrer une appli PM2, vider le cache apt, réduire le journal |
-| **Sécurité** | Audit des sites (`.env`, `.git`, dumps exposés, dossiers listables, en-têtes, ports, SSH), mises à jour apt, fail2ban, ports ouverts, connexions SSH, journal des actions | Lancer l'audit, installer les mises à jour, redémarrer le serveur (avec `update-grub` si besoin), débannir une IP, mettre à jour le panel |
+| **Système** | Services systemd, applis PM2, timers et crontabs, pools PHP-FPM, requêtes MariaDB lentes, partitions et gros dossiers, **prévision de remplissage du disque** (tendance sur 30 jours) | Redémarrer ou recharger un service, redémarrer une appli PM2, vider le cache apt, réduire le journal |
+| **Sécurité** | Audit des sites (`.env`, `.git`, dumps exposés, dossiers listables, en-têtes, ports, SSH), mises à jour apt, fail2ban, ports ouverts, connexions SSH, journal des actions | Lancer l'audit, **corriger en un clic** (en-têtes de sécurité, fichiers sensibles bloqués, version masquée ; vérifié et annulable), installer les mises à jour, redémarrer le serveur (avec `update-grub` si besoin), débannir une IP, mettre à jour le panel |
 | **Données** | Bases MariaDB, sauvegardes quotidiennes (bases **et fichiers** : sites, configs Apache/Nginx, certificats), état de la copie externe, journaux filtrables, explorateur de fichiers en lecture seule | Sauvegarder, envoyer hors du serveur (S3, SFTP, Google Drive… via rclone), télécharger l'archive complète en un clic, restaurer une base (copie de sécurité automatique avant) |
 | **Administration** | Comptes, rôles et permissions, paramètres du panel | Créer, inviter, désactiver des comptes ; régler le SMTP, les alertes (e-mail, Discord, Telegram, webhook), la surveillance externe, les sauvegardes, la sécurité ; changer de domaine |
 | **Mon compte** | Profil, sessions ouvertes sur chaque appareil | Changer de mot de passe, fermer une session à distance |
@@ -236,6 +236,18 @@ Les alertes (*Paramètres › Alertes*) partent **du serveur** : e-mail, Discord
 1. Crée un check gratuit sur [healthchecks.io](https://healthchecks.io) (période **1 minute**, marge **5 minutes**) ou un moniteur « Push » dans ton Uptime Kuma.
 2. Colle son URL de ping dans Hostkeep, puis **Envoyer un ping de test**.
 3. Le collecteur l'appelle chaque minute. S'il échoue, il envoie un signal d'échec (Healthchecks, Kuma) ; s'il ne l'appelle plus du tout (serveur éteint, réseau coupé, collecteur bloqué), le service t'alerte par ses propres moyens (e-mail, SMS, Telegram…).
+
+## 🛠️ Corriger l'audit en un clic
+
+*Sécurité › Audit* propose trois corrections, chacune **un seul fichier de configuration global**, vérifié (`apache2ctl configtest` / `nginx -t`), retiré automatiquement s'il casse la configuration, puis contrôlé par un nouvel audit. Un bouton **Retirer** remet l'état d'origine.
+
+| Correction | Apache | Nginx |
+|---|---|---|
+| **En-têtes de sécurité** (`nosniff`, `X-Frame-Options SAMEORIGIN`, `Referrer-Policy`, HSTS 6 mois en HTTPS) | `conf-available/hostkeep-headers.conf` (+ `mod_headers`) ; n'écrase jamais un en-tête déjà envoyé par un site | `conf.d/hostkeep-security-headers.conf` ; les blocs qui ont leurs propres `add_header` doivent inclure `snippets/hostkeep-headers.conf` |
+| **Fichiers sensibles bloqués** (`.env`, `.git`, dumps, sauvegardes, `composer.json`, phpinfo, listes de dossiers) | `conf-available/hardening.conf` | `snippets/hostkeep-deny.conf`, à inclure dans chaque bloc `server` (le compte rendu liste les fichiers) |
+| **Version du serveur masquée** | `ServerTokens Prod`, `ServerSignature Off` | `server_tokens off` |
+
+Les sites eux-mêmes ne sont jamais modifiés : pour Nginx, Hostkeep indique la ligne `include` à ajouter et où.
 
 ## 💾 Sauvegarder et restaurer
 

@@ -15,6 +15,35 @@ function security_live(array $sec): array
         'reboot_required' => ($sec['kernel_latest'] ?? $running) !== $running, 'since_reboot' => true]);
 }
 
+/**
+ * When will / be full? Straight line through the daily peak of the last 30 days (least squares).
+ * null while there are fewer than 3 days of measures. days = null when the usage does not grow.
+ */
+function disk_forecast(): ?array
+{
+    $rows = db()->query('SELECT FLOOR(ts / 86400) AS d, MAX(disk_used) AS u, MAX(disk_total) AS t FROM metrics
+                         WHERE ts > ' . (time() - 30 * 86400) . ' GROUP BY d ORDER BY d')->fetchAll();
+    $n = count($rows);
+    if ($n < 3) {
+        return null;
+    }
+    $sx = $sy = $sxy = $sxx = 0.0;
+    foreach ($rows as $r) {
+        $x = (float) $r['d'];
+        $y = (float) $r['u'];
+        $sx += $x;
+        $sy += $y;
+        $sxy += $x * $y;
+        $sxx += $x * $x;
+    }
+    $den = $n * $sxx - $sx * $sx;
+    $slope = $den > 0 ? ($n * $sxy - $sx * $sy) / $den : 0.0;   // bytes per day
+    $last = end($rows);
+    $free = max(0, (float) $last['t'] - (float) $last['u']);
+    $growing = $slope > 50 * 1024 * 1024;   // under 50 Mo/day: noise (logs, caches), not a trend
+    return ['days' => $growing ? (int) floor($free / $slope) : null, 'per_day' => (int) round($slope), 'free' => (int) $free, 'samples' => $n];
+}
+
 /** Last local backup and state of the off-site copy (home page, alerts). */
 function backup_summary(): array
 {
@@ -99,6 +128,11 @@ function overview(): array
             $add('crit', "Audit de sécurité : $crit problème(s) critique(s) (fichiers sensibles exposés…).", 'security');
         }
     }
+    $forecast = disk_forecast();
+    if ($forecast && $forecast['days'] !== null && $forecast['days'] < 14) {
+        // bucketed wording: the alert text (and so the e-mail) does not change every day
+        $add($forecast['days'] < 3 ? 'crit' : 'warn', 'Le disque « / » sera plein dans moins de ' . ($forecast['days'] < 3 ? '3' : '14') . ' jours au rythme des 30 derniers jours.', 'storage');
+    }
     $backup = backup_summary();
     if ($backup['day'] === null || $backup['day'] < date('Y-m-d', time() - 2 * 86400)) {
         $add('warn', 'Aucune sauvegarde depuis plus de 2 jours.', 'backups');
@@ -132,6 +166,7 @@ function overview(): array
         'sites_total' => $total,
         'alerts' => $alerts,
         'backup' => $backup,
+        'disk_forecast' => $forecast,
         'os' => (static function (): string {
             $o = @parse_ini_file('/etc/os-release');
             return (string) ($o['PRETTY_NAME'] ?? 'Linux');

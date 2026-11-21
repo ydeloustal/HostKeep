@@ -42,6 +42,7 @@ $modes = ['minute' => ['metrics', 'services', 'processes', 'schedule', 'heartbea
     'offsite-test' => ['offsite_test'],             // "Tester la connexion"
     'offsite-fetch' => ['offsite_fetch'],           // hostkeep restore fetch [day]
     'scan' => ['scan'],                    // nightly security scan of the sites
+    'harden-report' => ['harden_report'],  // after « Corriger » in the audit (root helper)
     'updates' => ['updates'],              // after apt update / upgrade
     'backup-list' => ['backups']];         // after a restore
 $modes['all'] = array_diff(array_merge($modes['minute'], $modes['5min'], $modes['hourly']), ['notify', 'heartbeat']);

@@ -319,6 +319,8 @@ cmd_app() {
   step "Helper root, sudoers et commande « hostkeep »"
   install -o root -g root -m 750 "$SRC/system/hostkeep-action" /usr/local/sbin/hostkeep-action
   install -o root -g root -m 755 "$SRC/system/hostkeep-cli" /usr/local/bin/hostkeep
+  install -d -o root -g root -m 755 /usr/local/share/hostkeep/hardening   # used by « Corriger » in the audit
+  install -o root -g root -m 644 "$SRC"/system/hardening/*.conf /usr/local/share/hostkeep/hardening/
   visudo -cf "$SRC/system/sudoers-hostkeep" >/dev/null
   install -o root -g root -m 440 "$SRC/system/sudoers-hostkeep" /etc/sudoers.d/hostkeep
   sudo -n -u hostkeep sudo -n -l /usr/local/sbin/hostkeep-action >/dev/null || die "règle sudoers non prise en compte."
@@ -618,7 +620,7 @@ apache_hardening() {
   [[ -e /etc/apache2/conf-enabled/hardening.conf ]] && { ok "protection Apache globale (hardening.conf) déjà active"; return 0; }
   if ((HARDEN)) || confirm "Activer aussi la protection Apache globale (bloque .env, .git, dumps SQL, phpinfo… sur TOUS les sites) ?" n; then
     keep /etc/apache2/conf-available/hardening.conf /etc/apache2/conf-enabled/hardening.conf
-    install -m 644 "$SRC/system/apache-hardening.conf" /etc/apache2/conf-available/hardening.conf
+    install -m 644 "$SRC/system/hardening/apache-hardening.conf" /etc/apache2/conf-available/hardening.conf
     a2enconf -q hardening >/dev/null && ok "protection globale activée (désactivable : a2disconf hardening)"
   fi
 }

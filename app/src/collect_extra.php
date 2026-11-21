@@ -525,9 +525,18 @@ function c_scan(): void
     if ($ngx !== '' && !preg_match('/^\s*server_tokens\s+off\s*;/m', $ngx)) {
         $add('info', 'serveur', 'Nginx affiche sa version (server_tokens)', 'Ajoute « server_tokens off; » dans le bloc http de /etc/nginx/nginx.conf.');
     }
-    $sec = (string) @file_get_contents('/etc/apache2/conf-enabled/security.conf');
-    if (preg_match('/^\s*ServerTokens\s+(OS|Full|Minor|Minimal|Major)/mi', $sec, $m)) {
-        $add('info', 'serveur', "Apache affiche sa version (ServerTokens {$m[1]})", 'ServerTokens Prod et ServerSignature Off la masquent.');
+    // Apache: what it really sends (a later conf, e.g. Hostkeep's zz-hostkeep-tokens.conf, can override security.conf)
+    if (is_dir('/etc/apache2/conf-enabled') && trim(sh('systemctl is-active apache2')) === 'active') {
+        $port = trim(sh("ss -Hltnp 'sport = :80' | grep -q apache2 && echo 80"));
+        $server = $port !== '' ? (http_probe('http://127.0.0.1/', 1024)['headers']['server'] ?? '') : '';
+        if (preg_match('#Apache/\d#', $server)) {
+            $add('info', 'serveur', "Apache affiche sa version ($server)", 'ServerTokens Prod et ServerSignature Off la masquent.');
+        } elseif ($server === '') {
+            $sec = (string) @file_get_contents('/etc/apache2/conf-enabled/security.conf');
+            if (preg_match('/^\s*ServerTokens\s+(OS|Full|Minor|Minimal|Major)/mi', $sec, $m) && !file_exists('/etc/apache2/conf-enabled/zz-hostkeep-tokens.conf')) {
+                $add('info', 'serveur', "Apache affiche sa version (ServerTokens {$m[1]})", 'ServerTokens Prod et ServerSignature Off la masquent.');
+            }
+        }
     }
     foreach (glob('/etc/sudoers.d/*') ?: [] as $f) {
         if (is_file($f) && (fileperms($f) & 0777) !== 0440) {
@@ -608,8 +617,75 @@ function c_scan(): void
     }
     $order = ['crit' => 0, 'warn' => 1, 'info' => 2];
     usort($findings, fn($a, $b) => [$order[$a['severity']], $a['site']] <=> [$order[$b['severity']], $b['site']]);
-    save('secscan', ['ran' => time(), 'duration' => time() - $t0, 'sites' => count($sites), 'findings' => $findings]);
+    save('secscan', ['ran' => time(), 'duration' => time() - $t0, 'sites' => count($sites), 'findings' => $findings, 'hardening' => hardening_state()]);
     echo count($findings) . " point(s) relevé(s) sur " . count($sites) . " site(s).\n";
+}
+
+/* ---------- audit fixes (Sécurité › Audit › Corriger, root helper « harden ») ---------- */
+
+/** Which global fix is in place, per web server. */
+function hardening_state(): array
+{
+    $apache = is_dir('/etc/apache2/conf-enabled');
+    $nginx = is_dir('/etc/nginx/conf.d');
+    return [
+        'servers' => ['apache' => $apache, 'nginx' => $nginx],
+        'headers' => file_exists('/etc/apache2/conf-enabled/hostkeep-headers.conf') || file_exists('/etc/nginx/conf.d/hostkeep-security-headers.conf'),
+        'tokens' => file_exists('/etc/apache2/conf-enabled/zz-hostkeep-tokens.conf') || file_exists('/etc/nginx/conf.d/hostkeep-tokens.conf'),
+        'sensitive' => file_exists('/etc/apache2/conf-enabled/hardening.conf') || file_exists('/etc/nginx/snippets/hostkeep-deny.conf'),
+    ];
+}
+
+/** Which audit findings a fix addresses (same rules as the « Corriger » buttons of the page). */
+function finding_fix(array $f): ?string
+{
+    return match (true) {
+        $f['title'] === 'En-têtes de sécurité manquants' => 'headers',
+        (bool) preg_match('/affiche sa version/', $f['title']) => 'tokens',
+        (bool) preg_match('/téléchargeable|lisible|Liste du dossier|phpinfo/', $f['title']) => 'sensitive',
+        default => null,
+    };
+}
+
+/** After a fix: what the new audit still finds of that kind, and what to add by hand for Nginx. */
+function c_harden_report(): void
+{
+    global $argv;
+    $kind = $argv[2] ?? '';
+    $mode = $argv[3] ?? 'on';
+    $left = array_values(array_filter(snapshot_data('secscan')['findings'] ?? [], fn($f) => finding_fix($f) === $kind));
+    if ($mode === 'off') {
+        echo "Correction retirée.\n";
+        return;
+    }
+    if (!$left) {
+        echo "✔ Le nouvel audit ne trouve plus aucun constat de ce type.\n";
+        return;
+    }
+    $sites = [];
+    foreach (snapshot_data('sites')['sites'] ?? [] as $s) {
+        $sites[$s['name']] = $s;
+    }
+    echo count($left) . " constat(s) de ce type restent :\n";
+    $hints = [];
+    foreach ($left as $f) {
+        echo "  - {$f['site']} : {$f['title']}" . ($f['detail'] !== '' ? " ({$f['detail']})" : '') . "\n";
+        $s = $sites[$f['site']] ?? null;
+        if ($s && ($s['server'] ?? '') === 'nginx' && in_array($kind, ['headers', 'sensitive'], true)) {
+            $files = array_map(fn($c) => preg_replace('/^nginx:/', '', $c), array_filter($s['confs'] ?? [], fn($c) => str_starts_with($c, 'nginx:')));
+            $hints[$f['site'] . ' → fichier ' . (implode(', ', $files) ?: '?') . ' (dans /etc/nginx/)'] = true;
+        }
+    }
+    if ($hints) {
+        $line = $kind === 'headers' ? 'include snippets/hostkeep-headers.conf;' : 'include snippets/hostkeep-deny.conf;';
+        echo "\nNginx ne peut pas appliquer ceci à tous les sites d'un coup. Ajoute la ligne\n    $line\n"
+            . "en haut du bloc server de chaque site concerné, puis « nginx -t && systemctl reload nginx » :\n";
+        foreach (array_keys($hints) as $h) {
+            echo "  - $h\n";
+        }
+    } elseif ($kind === 'headers') {
+        echo "\nCes sites envoient sans doute déjà certains en-têtes eux-mêmes (application, .htaccess) : Hostkeep ne les remplace jamais.\n";
+    }
 }
 
 function snapshot_data(string $name): array
