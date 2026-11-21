@@ -15,6 +15,7 @@
 #   sudo hostkeep restore list           backup days on this server
 #   sudo hostkeep restore fetch [day]    list the days of the off-site copy, or bring one back here
 #   sudo hostkeep restore files <day> <archive> [--in-place]   extract www, nginx… (aside by default)
+#   sudo hostkeep restore db <day> <database>   restore one database (a copy of its current state is kept first)
 #   sudo hostkeep logs                   last lines of the panel logs
 #   sudo hostkeep uninstall [--purge]
 set -euo pipefail
@@ -38,6 +39,25 @@ restore() {
       done ;;
     fetch)
       php "$APP/bin/collect.php" offsite-fetch "$day" ;;
+    db)
+      f=$BK/$day/$item.sql.gz
+      if [[ ! $day =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ || ! $item =~ ^[A-Za-z0-9_-]{1,64}$ || ! -f $f ]]; then
+        echo "Sauvegarde introuvable : $f (voir « hostkeep restore list »)" >&2; exit 1
+      fi
+      [[ $item != mysql ]] || { echo "La base système « mysql » ne se restaure pas ainsi." >&2; exit 1; }
+      if mysql -N -e 'SHOW DATABASES' | grep -qx -- "$item"; then
+        if [[ ${4:-} != --yes ]]; then
+          read -r -p "Remplacer le contenu actuel de la base « $item » par celui du $day ? Tape « restaurer » : " a
+          [[ $a == restaurer ]] || { echo "Annulé."; exit 1; }
+        fi
+        out=$BK/pre-restore/$(date +%Y%m%d-%H%M%S)-$item.sql.gz
+        mkdir -p "$BK/pre-restore"
+        mysqldump --single-transaction --quick --routines --triggers --events "$item" | gzip -6 > "$out" && chgrp hostkeep "$out" && chmod 640 "$out"
+        echo "Copie de l'état actuel : $out"
+      else
+        mysql -e "CREATE DATABASE \`$item\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci" && echo "Base « $item » créée."
+      fi
+      gunzip -c "$f" | mysql "$item" && echo "Base « $item » restaurée depuis le $day. Les comptes MariaDB du site (CREATE USER / GRANT) sont à recréer s'ils n'existent pas." ;;
     files)
       f=$BK/$day/files/$item.tar.gz
       if [[ ! $day =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ || ! $item =~ ^[a-z0-9]+$ || ! -f $f ]]; then
@@ -78,5 +98,5 @@ case $cmd in
     echo "--- /var/log/hostkeep/php-error.log"; tail -n 30 /var/log/hostkeep/php-error.log 2>/dev/null || true ;;
   uninstall) installer uninstall "$@" ;;
   version) cat "$APP/VERSION" 2>/dev/null || echo "?" ;;
-  *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; [[ $cmd == help ]] ;;
+  *) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; [[ $cmd == help ]] ;;
 esac

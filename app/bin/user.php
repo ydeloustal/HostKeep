@@ -10,6 +10,7 @@ declare(strict_types=1);
  *   user.php role <identifiant> <rôle>
  *   user.php enable|disable|unlock <identifiant>
  *   user.php 2fa-reset <identifiant>   removes the two-factor authentication (lost phone + recovery codes)
+ *   user.php import-config <dossier> [--accounts]   settings (and accounts) of a migration archive (restore.sh)
  *   user.php setup [--username=U] [--email=E] [--password-stdin|--generate]
  *        first Super Admin if none exists (interactive unless options are given)
  *   user.php migrate-env      imports the single account of Hostkeep 1.x (.env) when the table is empty
@@ -25,6 +26,7 @@ require __DIR__ . '/../src/bootstrap.php';
 require __DIR__ . '/../src/settings.php';
 require __DIR__ . '/../src/rbac.php';
 require __DIR__ . '/../src/totp.php';
+require __DIR__ . '/../src/migration.php';
 
 $args = array_slice($argv, 1);
 $opts = [];
@@ -238,6 +240,30 @@ switch ($cmd) {
         audit("double authentification de {$u['username']} réinitialisée (ligne de commande)", null, 0, 'root');
         out("Double authentification de « {$u['username']} » retirée, sessions fermées."
             . (two_fa_required($u['role']) ? ' Son rôle l\'exige : elle lui sera redemandée (QR code) à la prochaine connexion.' : ''));
+        break;
+
+    case 'import-config':
+        $dir = rtrim((string) ($pos[0] ?? fail('dossier « config » de l\'archive manquant.')), '/');
+        $settings = json_decode((string) @file_get_contents("$dir/settings.json"), true);
+        if (!is_array($settings)) {
+            fail("$dir/settings.json introuvable ou illisible.");
+        }
+        out('Réglages importés : ' . migration_import_settings($settings) . ' (les secrets ne font jamais partie de l\'archive).');
+        if (!empty($opts['accounts']) && is_file("$dir/accounts.json.enc")) {
+            $box = json_decode((string) file_get_contents("$dir/accounts.json.enc"), true) ?: [];
+            $plain = null;
+            for ($try = 1; $try <= 3 && $plain === null; $try++) {
+                $plain = migration_decrypt($box, ask('Phrase de passe des comptes (choisie à l\'export)', true));
+                if ($plain === null) {
+                    out($try < 3 ? 'Phrase incorrecte, réessaie.' : 'Phrase incorrecte : comptes non importés. Relance « sudo hostkeep restore … » ou crée-les à la main.');
+                }
+            }
+            if ($plain !== null) {
+                $r = migration_import_accounts(json_decode($plain, true) ?: []);
+                out('Comptes importés : ' . (implode(', ', $r['added']) ?: 'aucun') . ($r['skipped'] ? ' ; déjà présents, laissés tels quels : ' . implode(', ', $r['skipped']) : ''));
+                audit('comptes importés depuis une archive de migration : ' . implode(', ', $r['added']), null, 0, 'root');
+            }
+        }
         break;
 
     case 'migrate-env':

@@ -23,7 +23,7 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src php:8.2-cli sh -c "find app -name '*.php' -print0 | xargs -0 -n1 php -l"
 
       - name: Shell — shellcheck
-        run: shellcheck -S warning install.sh system/hostkeep-action system/hostkeep-cli
+        run: shellcheck -S warning install.sh system/hostkeep-action system/hostkeep-cli system/restore.sh
 
       - name: JavaScript — syntaxe
         run: for f in $(git ls-files 'app/public/*.js'); do node --check "$f"; done

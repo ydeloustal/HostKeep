@@ -20,6 +20,7 @@
 </p>
 
 <p align="center">
+  <a href="#-en-bref">En bref</a> ·
   <a href="#-installation-en-une-ligne">Installation</a> ·
   <a href="#-comptes-et-rôles">Rôles</a> ·
   <a href="#-ce-que-tu-peux-faire">Fonctionnalités</a> ·
@@ -29,6 +30,19 @@
 </p>
 
 ![Accueil de Hostkeep sur ordinateur](docs/screenshots/desktop-home.png)
+
+## ⚡ En bref
+
+| Je veux… | Une commande (sur le serveur) |
+|---|---|
+| **Installer** | `curl -fsSL https://raw.githubusercontent.com/ydeloustal/HostKeep/main/install.sh \| sudo bash` |
+| **Mettre à jour** | `sudo hostkeep update` (ou le bouton *Mettre à jour* du panel) |
+| **Sauvegarder maintenant** | `sudo hostkeep backup` (bases + sites + configs, puis copie externe) |
+| **Restaurer une base / des fichiers** | `sudo hostkeep restore db <jour> <base>` · `sudo hostkeep restore files <jour> www` |
+| **Changer de serveur** | Panel › *Administration › Version* › **Archive de migration**, puis sur le nouveau serveur : `sudo bash restore.sh` ([détails](#-changer-de-serveur)) |
+| **Désinstaller** | `sudo hostkeep uninstall` (`--purge` pour tout effacer) |
+
+L'installateur détecte le système (Debian 12/13, Ubuntu 22.04/24.04), installe ce qui manque, vérifie l'espace disque, la mémoire, les ports et le DNS, **te montre un récapitulatif avant de toucher à quoi que ce soit**, puis crée la base, les droits, le service et le premier compte. Chaque étape est rejouable et annulée en cas d'erreur.
 
 ## ✨ Pourquoi Hostkeep ?
 
@@ -190,6 +204,7 @@ sudo hostkeep backup                    # sauvegarde maintenant (bases + fichier
 sudo hostkeep restore list              # jours sauvegardés sur ce serveur
 sudo hostkeep restore fetch [jour]      # jours de la copie externe, ou en rapatrie un ici
 sudo hostkeep restore files <jour> www  # extrait une archive à part (--in-place pour remplacer)
+sudo hostkeep restore db <jour> <base>  # restaure une base (copie de l'état actuel avant)
 sudo hostkeep logs                      # journaux du service et du collecteur
 ```
 
@@ -315,6 +330,21 @@ Le panel a des pouvoirs d'administration : **protège-le comme un accès SSH.**
 Le code est remplacé ; le `.env`, la base (comptes, paramètres), les sauvegardes et la configuration du serveur web sont conservés.
 
 > **Depuis Hostkeep 1.x :** la mise à jour importe automatiquement l'ancien compte unique comme Super Admin (même mot de passe), remplace l'ancien pool PHP-FPM par `hostkeep.service` et bascule le vhost existant dessus.
+
+## 🚚 Changer de serveur
+
+1. Sur l'ancien serveur, dans le panel : *Administration › Version* › **Télécharger l'archive de migration** (Super Admin). Coche « Inclure les comptes » pour les emporter, chiffrés par une phrase de passe.
+2. Sur le nouveau serveur, fais pointer le DNS du panel vers lui, copie l'archive, puis :
+
+   ```bash
+   tar -xzf hostkeep-migration-*.tar.gz && cd hostkeep-migration-*/
+   sudo bash restore.sh            # --domain autre.domaine.fr pour en changer
+   ```
+
+   `restore.sh` installe Hostkeep (même branche depuis GitHub, ou le code de l'archive hors ligne), réimporte les réglages et les comptes, publie le panel et liste ce qu'il reste à faire.
+3. Ressaisis les secrets (jamais dans l'archive : SMTP, sauvegarde externe, alertes, ping), puis rapatrie les données depuis la copie externe : `sudo hostkeep restore fetch`, `restore db`, `restore files`.
+
+L'archive contient le code, les réglages **sans secret**, les comptes **chiffrés** (si demandé, jamais les secrets de double authentification) et une notice ([`docs/RESTORE.md`](docs/RESTORE.md)).
 
 ## 🗑️ Désinstallation
 
