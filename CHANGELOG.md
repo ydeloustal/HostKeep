@@ -5,6 +5,21 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.9.0] — 2026-11-21
+
+### Ajouté
+- **Sites servis par Caddy** : découverts depuis la configuration en cours (API d'admin) ou le Caddyfile (`caddy adapt`) ; disponibilité, temps de réponse, racine, sockets PHP-FPM, proxy ; certificats obtenus par Caddy suivis (colonne « Géré par ») ; `/etc/caddy` ajouté aux sauvegardes de fichiers.
+- Audit : pour Caddy, bloc `(hostkeep_securite)` prêt à coller (en-têtes sans écraser ceux des sites, fichiers sensibles en 403).
+
+- **Application installable (PWA) renforcée** : manifest complet (raccourcis Accueil, Sauvegardes, Audit, Sites ; captures pour la fenêtre d'installation ; `display_override`), mêmes balises sur toutes les pages (connexion, mot de passe, double authentification), installation possible dès la page de connexion.
+
+### Modifié
+- Service Worker v4, **Network-First sans cache HTTP** (`cache: 'no-cache'`) : une mise à jour de Hostkeep s'affiche au chargement suivant ; `sw.js` jamais mis en cache (`updateViaCache: 'none'`), vérifié à chaque retour sur l'appli, message « Hostkeep a été mis à jour » avec bouton Recharger. Le cache ne sert que de secours hors ligne ; l'API et les pages connectées ne sont jamais stockées.
+- CSS et JS appelés avec `?v=<version>` : aucun cache (navigateur, proxy) ne garde une ancienne version après une mise à jour.
+
+### Documentation
+- README : tableau de compatibilité Apache / Nginx / Caddy / proxy, structure du dépôt à jour.
+
 ## [2.8.0] — 2026-11-21
 
 ### Ajouté

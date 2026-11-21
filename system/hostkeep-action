@@ -166,7 +166,16 @@ harden() {
     esac
     seen=1
   fi
-  ((seen)) || { echo "Ni Apache ni Nginx sur ce serveur : rien à corriger ici."; return 1; }
+  if ((seen == 0)); then
+    if systemctl is-active --quiet caddy; then
+      echo "Caddy n'a pas de fichier de configuration global : la correction se fait dans le Caddyfile."
+      echo "Bloc prêt à coller (puis « import hostkeep_securite » dans chaque site) : $HARDEN_SRC/caddy-snippet.caddy"
+      echo; cat "$HARDEN_SRC/caddy-snippet.caddy" 2>/dev/null
+    else
+      echo "Ni Apache, ni Nginx, ni Caddy actif sur ce serveur : rien à corriger ici."
+    fi
+    return 1
+  fi
   echo; echo "# Nouvel audit pour vérifier"
   php "$APP/bin/collect.php" scan
   if ((rc)); then echo "Échec : la configuration d'avant est conservée (voir ci-dessus)."; else php "$APP/bin/collect.php" harden-report "$kind" "$mode"; fi

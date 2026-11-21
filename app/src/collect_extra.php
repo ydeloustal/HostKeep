@@ -16,7 +16,7 @@ function backup_keep_days(): int
 }
 
 /** Folders saved as files/<name>.tar.gz (paths relative to /), when they exist. */
-const BACKUP_SOURCES = ['www' => 'var/www', 'apache2' => 'etc/apache2', 'nginx' => 'etc/nginx', 'letsencrypt' => 'etc/letsencrypt', 'hostkeep' => 'etc/hostkeep'];
+const BACKUP_SOURCES = ['www' => 'var/www', 'apache2' => 'etc/apache2', 'nginx' => 'etc/nginx', 'caddy' => 'etc/caddy', 'letsencrypt' => 'etc/letsencrypt', 'hostkeep' => 'etc/hostkeep'];
 
 function backup_files_keep_days(): int
 {
@@ -629,7 +629,8 @@ function hardening_state(): array
     $apache = is_dir('/etc/apache2/conf-enabled');
     $nginx = is_dir('/etc/nginx/conf.d');
     return [
-        'servers' => ['apache' => $apache, 'nginx' => $nginx],
+        'servers' => ['apache' => $apache, 'nginx' => $nginx, 'caddy' => caddy_config() !== []],
+        'caddy_snippet' => (string) @file_get_contents('/usr/local/share/hostkeep/hardening/caddy-snippet.caddy'),
         'headers' => file_exists('/etc/apache2/conf-enabled/hostkeep-headers.conf') || file_exists('/etc/nginx/conf.d/hostkeep-security-headers.conf'),
         'tokens' => file_exists('/etc/apache2/conf-enabled/zz-hostkeep-tokens.conf') || file_exists('/etc/nginx/conf.d/hostkeep-tokens.conf'),
         'sensitive' => file_exists('/etc/apache2/conf-enabled/hardening.conf') || file_exists('/etc/nginx/snippets/hostkeep-deny.conf'),
@@ -668,9 +669,14 @@ function c_harden_report(): void
     }
     echo count($left) . " constat(s) de ce type restent :\n";
     $hints = [];
+    $caddy = [];
     foreach ($left as $f) {
         echo "  - {$f['site']} : {$f['title']}" . ($f['detail'] !== '' ? " ({$f['detail']})" : '') . "\n";
         $s = $sites[$f['site']] ?? null;
+        if ($s && ($s['server'] ?? '') === 'caddy') {
+            $caddy[$f['site']] = true;
+            continue;
+        }
         if ($s && ($s['server'] ?? '') === 'nginx' && in_array($kind, ['headers', 'sensitive'], true)) {
             $files = array_map(fn($c) => preg_replace('/^nginx:/', '', $c), array_filter($s['confs'] ?? [], fn($c) => str_starts_with($c, 'nginx:')));
             $hints[$f['site'] . ' → fichier ' . (implode(', ', $files) ?: '?') . ' (dans /etc/nginx/)'] = true;
@@ -683,7 +689,12 @@ function c_harden_report(): void
         foreach (array_keys($hints) as $h) {
             echo "  - $h\n";
         }
-    } elseif ($kind === 'headers') {
+    }
+    if ($caddy) {
+        echo "\nSites servis par Caddy (" . implode(', ', array_keys($caddy)) . ") : Caddy n'a pas de fichier global. Colle le bloc\n"
+            . "/usr/local/share/hostkeep/hardening/caddy-snippet.caddy en haut de /etc/caddy/Caddyfile, ajoute « import hostkeep_securite »\n"
+            . "dans le bloc de chaque site, puis « caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy ».\n";
+    } elseif (!$hints && $kind === 'headers') {
         echo "\nCes sites envoient sans doute déjà certains en-têtes eux-mêmes (application, .htaccess) : Hostkeep ne les remplace jamais.\n";
     }
 }
