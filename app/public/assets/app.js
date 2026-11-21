@@ -110,6 +110,7 @@ function toast(text, cls = '') {
   const t = el('div', { class: `toast ${cls}`, role: cls === 'crit' ? 'alert' : 'status' }, cls ? icon(cls === 'ok' ? 'check' : 'alert') : null, el('span', {}, text));
   toasts.append(t);
   setTimeout(() => t.remove(), 6000);
+  return t;
 }
 
 /* Banner shown while the server does not answer (network cut, server down). */
@@ -1549,7 +1550,20 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncThemeB
 syncThemeBtn();
 
 /* Installable app (PWA): service worker + "Installer l'appli" button when the browser offers it. */
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => { /* not fatal */ });
+if ('serviceWorker' in navigator) {
+  /* updateViaCache 'none': sw.js itself is never taken from the HTTP cache, so a new version is seen at once. */
+  navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(reg => {
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });   // back to the tab / app
+  }).catch(() => { /* not fatal */ });
+  /* A new worker took over (Hostkeep was updated): the next screen already uses the new files. */
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) return;   // first install, not an update
+    const t = toast('Hostkeep a été mis à jour.', 'ok');
+    const b = el('button', { class: 'linkish', type: 'button', onclick: () => location.reload() }, 'Recharger');
+    t.append(' ', b);
+  });
+}
 let installEvt = null;
 const installBtn = document.getElementById('install-btn');
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; installBtn.hidden = false; });

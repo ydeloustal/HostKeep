@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/bootstrap.php';
 require __DIR__ . '/../src/auth.php';
+require __DIR__ . '/../src/pwa.php';
 require __DIR__ . '/../src/mailer.php';
 
 security_headers();
@@ -69,14 +70,8 @@ $canForgot = setting_bool('security.password_reset') && mail_configured();
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title><?= $forgot ? 'Mot de passe oublié' : ($pending ? 'Code de vérification' : 'Connexion') ?> · <?= h($name) ?></title>
-<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-<link rel="manifest" href="/assets/manifest.json">
-<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#131720" media="(prefers-color-scheme: dark)">
-<meta name="apple-mobile-web-app-title" content="<?= h($name) ?>">
-<meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="/assets/app.css">
+<?= pwa_head($name) ?>
+<link rel="stylesheet" href="<?= h(asset('/assets/app.css')) ?>">
 </head>
 <body class="login-page">
 <main class="login-card">
@@ -124,6 +119,6 @@ $canForgot = setting_bool('security.password_reset') && mail_configured();
     <p class="login-note">Les échecs répétés bloquent temporairement le compte et l'adresse IP.</p>
   <?php endif; ?>
 </main>
-<script src="/assets/login.js"></script>
+<script src="<?= h(asset('/assets/login.js')) ?>"></script>
 </body>
 </html>

@@ -93,7 +93,7 @@ L'installateur détecte le système (Debian 12/13, Ubuntu 22.04/24.04), installe
 | ⌨️ **Raccourcis clavier** | `1` à `5` pour changer de page, `R` pour rafraîchir, `?` pour la liste. |
 | 🧹 **Filtres instantanés** | Chaque tableau de plus de 8 lignes a son champ de filtre. |
 | 🔔 **Actions en arrière-plan** | Ferme la fenêtre d'une action longue : elle continue, une notification t'annonce le résultat. |
-| 📱 **Installable** | Sur téléphone et ordinateur (PWA), avec une page claire quand le serveur est injoignable. |
+| 📱 **Installable** | Sur téléphone et ordinateur (PWA) : bouton *Installer l'appli*, ou menu du navigateur › *Installer* / *Ajouter à l'écran d'accueil*. Raccourcis vers Sauvegardes, Audit, Sites. Les mises à jour s'affichent aussitôt (réseau d'abord), et une page claire s'affiche quand le serveur est injoignable. |
 | 🌗 **Clair et sombre** | Suit le système, modifiable d'un clic. |
 | ♿ **Accessible** | Navigation complète au clavier, contrastes AA, animations coupées si le système le demande. |
 | 🔗 **Liens profonds** | Chaque section a son adresse, par exemple `#system/storage`. |
@@ -403,8 +403,9 @@ Les autres sites ne sont pas touchés. Le certificat Let's Encrypt est conservé
 
 ```
 app/
-  public/         pages servies : index, connexion, 2fa.php (double authentification), mot de passe, API JSON, assets (JS, CSS)
-  src/            auth.php, totp.php (TOTP + QR code), rbac.php, users.php, settings.php, mailer.php,
+  public/         pages servies : index, connexion, 2fa.php (double authentification), mot de passe, API JSON,
+                  sw.js (Service Worker), offline.html, assets (JS, CSS, manifest.json, icônes)
+  src/            pwa.php (balises de l'appli installable), auth.php, totp.php (TOTP + QR code), rbac.php, users.php, settings.php, mailer.php,
                   notify.php (Discord, Telegram, webhook, ping externe), actions.php, overview.php (alertes, prévision disque),
                   webservers.php (sites Apache / Nginx / Caddy), collect_extra.php (sauvegardes, trafic, audit),
                   offsite.php (copie externe rclone), migration.php (archive de migration)

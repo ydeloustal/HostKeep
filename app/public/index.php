@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../src/bootstrap.php';
 require __DIR__ . '/../src/auth.php';
+require __DIR__ . '/../src/pwa.php';
 require __DIR__ . '/../src/mailer.php';
 require __DIR__ . '/../src/users.php';
 
@@ -34,14 +35,8 @@ $initials = mb_strtoupper(mb_substr($me['display_name'] ?: $me['username'], 0, 1
 <meta name="robots" content="noindex, nofollow">
 <meta name="csrf" content="<?= h($token) ?>">
 <title><?= h($name) ?></title>
-<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-<link rel="manifest" href="/assets/manifest.json">
-<link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#131720" media="(prefers-color-scheme: dark)">
-<meta name="apple-mobile-web-app-title" content="<?= h($name) ?>">
-<meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="/assets/app.css">
+<?= pwa_head($name) ?>
+<link rel="stylesheet" href="<?= h(asset('/assets/app.css')) ?>">
 <script type="application/json" id="me-data"><?= json_encode(me_payload($me), JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) ?></script>
 </head>
 <body>
@@ -130,6 +125,6 @@ $initials = mb_strtoupper(mb_substr($me['display_name'] ?: $me['username'], 0, 1
   </div>
 </div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
-<script src="/assets/app.js"></script>
+<script src="<?= h(asset('/assets/app.js')) ?>"></script>
 </body>
 </html>

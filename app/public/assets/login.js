@@ -1,4 +1,6 @@
 'use strict';
+/* Installable app from the login page too (the service worker must control start_url). */
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {});
 /* Login / password pages: show / hide passwords, caps-lock warning, no double submit. Works without it too. */
 const caps = document.getElementById('caps');
 document.querySelectorAll('.pw-field').forEach(field => {
