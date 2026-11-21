@@ -5,6 +5,7 @@ require __DIR__ . '/../src/bootstrap.php';
 require __DIR__ . '/../src/auth.php';
 require __DIR__ . '/../src/mailer.php';
 require __DIR__ . '/../src/notify.php';
+require __DIR__ . '/../src/migration.php';
 require __DIR__ . '/../src/users.php';
 require __DIR__ . '/../src/live.php';
 require __DIR__ . '/../src/actions.php';
@@ -174,6 +175,20 @@ try {
             $errors = notify_send($msg, $channels);
             audit('test des canaux d\'alerte : ' . implode(', ', $channels));
             json_out(['results' => array_map(fn($c) => ['channel' => CHANNEL_LABELS[$c], 'ok' => !isset($errors[$c]), 'error' => $errors[$c] ?? null], $channels)]);
+
+        case 'panel.export':
+            // classic form POST (the browser saves the answer as a file): fields in $_POST, CSRF checked above
+            $post();
+            require_perm($me, 'panel.update');
+            $withAccounts = ($_POST['accounts'] ?? '') === '1';
+            $pass = (string) ($_POST['passphrase'] ?? '');
+            if ($withAccounts && (mb_strlen($pass) < 12 || $pass !== (string) ($_POST['passphrase2'] ?? ''))) {
+                json_out(['error' => 'Phrase de passe : au moins 12 caractères, identique dans les deux champs.'], 422);
+            }
+            audit('archive de migration téléchargée' . ($withAccounts ? ' (avec les comptes, chiffrés)' : ''));
+            $host = preg_replace('/[^A-Za-z0-9.-]/', '_', (string) gethostname());
+            helper_stream(['export-bundle'], "hostkeep-migration-$host-" . date('Y-m-d') . '.tar.gz',
+                json_encode(migration_export($withAccounts, $pass), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
         case 'settings.testping':
             $post();

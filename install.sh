@@ -938,6 +938,22 @@ cmd_status() {
 }
 
 # ---------- full install ----------
+# What the server offers, shown before anything changes (warnings only: the install decides nothing from it).
+preflight() {
+  local free mem p80 p443
+  free=$(df -Pk / | awk 'NR==2 {print int($4/1024)}')
+  mem=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+  p80=$(port_owner 80); p443=$(port_owner 443)
+  echo
+  echo "  ${B}Vérifications${N}"
+  row "  Espace libre (/)" 16 "$((free / 1024)) Go$( ((free < 2048)) && echo " ${Y}— peu : prévois de la place pour les sauvegardes${N}")"
+  row "  Mémoire" 16 "$mem Mo$( ((mem < 900)) && echo " ${Y}— juste : 1 Go conseillé${N}")"
+  row "  Port 80 / 443" 16 "${p80:-libre} / ${p443:-libre}"
+  if [[ -n $DOMAIN ]] && command -v getent >/dev/null; then
+    local ips; ips=$(getent ahosts "$DOMAIN" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ')
+    row "  DNS $DOMAIN" 16 "${ips:-${Y}ne résout pas encore${N}}"
+  fi
+}
 cmd_install() {
   os_check
   echo
@@ -959,6 +975,7 @@ cmd_install() {
   echo "  ${B}Récapitulatif${N}"
   row "  Domaine" 16 "${DOMAIN:-(plus tard)}"; row "  Serveur web" 16 "${WEB:-auto → ${detected:-nginx} ($DETECTED_WHAT)}"
   row "  HTTPS" 16 "$HTTPS"; row "  Dossier" 16 "$APP"; row "  Source" 16 "$SRC"
+  preflight
   confirm "Lancer l'installation ?" y || die "annulé."
 
   cmd_deps
