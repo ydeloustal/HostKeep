@@ -5,6 +5,8 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.7.0] — 2026-11-21
+
 ### Ajouté
 - **Archive de migration** (*Administration › Version*, Super Admin) : un `.tar.gz` avec le code de la version installée, les réglages sans aucun secret, les comptes chiffrés par une phrase de passe (AES-256-GCM, PBKDF2 ; optionnel, jamais les secrets de double authentification), la config serveur sans clé, une notice et **`restore.sh`**.
 - **`restore.sh`** : sur un nouveau serveur, installe Hostkeep (même branche depuis GitHub, ou le code de l'archive hors ligne), réimporte réglages et comptes, publie le panel sur le domaine et liste ce qu'il reste à faire.
