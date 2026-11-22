@@ -5,6 +5,31 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.10.0] — 2026-11-22
+
+Version de sécurité : corrige les failles relevées par l'audit (`docs/strategy/CURRENT_STATE_AUDIT.md`). Mise à jour recommandée.
+
+### Sécurité
+- **Sauvegarde externe, destination « Autre » : la configuration rclone collée est désormais une liste blanche.** rclone tourne en root dans le collecteur ; certaines de ses options lancent un programme ou lisent un fichier local (`ssh`, `*_command`, `*_file`, backends `local`, `alias`, `union`, `crypt`…), ce qui permettait à un compte Administrateur d'exécuter des commandes en root. Seuls les backends de stockage distants courants et les options d'identification et d'adresse sont acceptés ; le refus nomme l'option en cause.
+- La règle est vérifiée à l'enregistrement **et** à chaque écriture de `rclone.conf` : une configuration enregistrée avant cette version et devenue invalide fait échouer la copie externe avec une alerte qui explique quoi corriger (rien n'est envoyé tant qu'elle n'est pas corrigée).
+- `rclone.conf` : une valeur contenant un caractère de contrôle (saut de ligne…) est refusée, pour qu'aucun réglage ne puisse ajouter d'options.
+- **Un Administrateur ne peut plus obtenir les secrets du panel.** Il pouvait lire `/var/www/hostkeep/.env` (clé de chiffrement de tous les secrets) dans l'explorateur et télécharger la base `hostkeep`, puis déchiffrer les secrets de double authentification des Super Admins et les identifiants enregistrés.
+  - Explorateur : les fichiers de Hostkeep (`/var/www/hostkeep`, `/etc/hostkeep`, `/var/lib/hostkeep`, `/var/backups/hostkeep`) sont toujours refusés, y compris par lien symbolique ou `..`, quelles que soient les racines configurées.
+  - Nouvelle permission **`backups.panel`** (Super Admin) pour télécharger ou restaurer la base `hostkeep`, sa copie avant restauration, l'archive de fichiers `hostkeep` et l'archive complète d'un jour (qui les contient).
+  - Le `.env` du panel n'est plus dans l'archive `www` : il est sauvegardé dans l'archive `hostkeep`. Restaurer les deux le remet en place.
+  - Les archives `www` faites **avant** cette version contiennent encore ce `.env` : elles disparaissent à la fin de la conservation des fichiers (3 jours par défaut).
+- **Mises à jour signées.** Dès qu'une clé publique est déclarée dans `system/allowed_signers`, « Mettre à jour » et `sudo hostkeep update` n'installent plus que le plus récent tag de version `vX.Y.Z` signé par une de ces clés (signature SSH vérifiée par git) ; un commit poussé sans la clé n'est jamais installé. Tant qu'aucune clé n'est déclarée, le comportement reste celui d'avant et la page *Version* l'indique (« non vérifiées »). Procédure : `docs/RELEASING.md`.
+- `sudo hostkeep update` passe par les mêmes contrôles que le bouton du panel (il faisait un simple `git pull`).
+- **Sorties des tâches** : identifiants aléatoires, et lecture réservée à l'auteur de la tâche ou à un compte autorisé à lancer la même action (un Lecteur pouvait lire la sortie de n'importe quelle tâche).
+- **Mode proxy** : l'adresse du visiteur (`X-Forwarded-For`) n'est plus crue que du reverse proxy (`--trusted-proxy`, par défaut la boucle locale ou les réseaux Docker) ; avant, toute machine d'un réseau privé pouvait usurper une adresse.
+
+### Corrigé
+- Le journal des actions indique désormais le résultat d'une tâche même si personne n'a suivi son exécution (avant, il restait vide quand la fenêtre était fermée).
+- Les alertes dont le texte contient une valeur qui change (RAM, disque, code HTTP d'un site, heures sans copie externe…) étaient renvoyées à chaque contrôle : elles ne partent plus qu'une fois, puis à leur résolution. À la mise à jour, ces alertes peuvent être notifiées une dernière fois.
+
+### Tests
+- Premiers tests automatisés, exécutés par le CI : `tests/php/` (règles rclone, rôles et sauvegardes sensibles, sous PHP 8.1 et la version du runner) et `tests/helper/` (explorateur et mises à jour signées du helper root, sans root, avec un vrai git).
+
 ## [2.9.0] — 2026-11-21
 
 ### Ajouté

@@ -30,6 +30,7 @@ const PERMISSIONS = [
     'settings.smtp' => ['admin', 'Paramètres e-mail (SMTP)'],
     'settings.notifications' => ['admin', 'Alertes par e-mail'],
     'settings.backups' => ['admin', 'Paramètres des sauvegardes'],
+    'backups.panel' => ['superadmin', 'Télécharger ou restaurer ce qui contient les secrets du panel (base hostkeep, archive hostkeep, archive complète d\'un jour)'],
     'settings.security' => ['superadmin', 'Paramètres de sécurité (sessions, mots de passe, IP autorisées)'],
     'panel.update' => ['superadmin', 'Mettre à jour le panel, revenir en arrière, changer de domaine'],
 ];
@@ -71,6 +72,22 @@ function role_permissions(string $role): array
 function action_permission(string $verb, array $args): ?string
 {
     return ACTION_PERMS[$verb . ':' . ($args[0] ?? '')] ?? ACTION_PERMS[$verb] ?? null;
+}
+
+/**
+ * Does this backup download hold the panel's own secrets? The "hostkeep" database (password hashes, encrypted
+ * 2FA secrets and settings), the "hostkeep" file archive (/etc/hostkeep and the panel's .env with its key) and
+ * a whole day (which contains both). Those need "backups.panel", the other ones "backups.download".
+ */
+function backup_holds_panel_secrets(string $db, ?string $archive, string $pre): bool
+{
+    if ($pre !== '') {
+        return (bool) preg_match('/^\d{8}-\d{6}-hostkeep\.sql\.gz$/D', $pre);
+    }
+    if ($archive !== null) {
+        return $archive === '' || $archive === 'hostkeep';
+    }
+    return $db === 'hostkeep';
 }
 
 /** Stops the API request with 403 when the permission is missing. */

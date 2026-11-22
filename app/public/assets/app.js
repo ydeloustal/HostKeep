@@ -708,7 +708,9 @@ B.panel = async () => {
   const n = (d.behind || []).length;
   const btn = actionBtn(n ? `Mettre à jour (${n})` : 'Vérifier et mettre à jour', 'self-update', [], {
     cls: n ? 'primary' : '',
-    confirm: 'Récupérer la dernière version depuis GitHub (git pull) et réinstaller le panel ? La page sera indisponible quelques secondes.',
+    confirm: d.signed
+      ? `Installer ${d.target || 'la dernière version signée'} (signature vérifiée) et réinstaller le panel ? La page sera indisponible quelques secondes.`
+      : 'Récupérer la dernière version de la branche depuis GitHub, SANS vérification de signature, et réinstaller le panel ? La page sera indisponible quelques secondes.',
   });
   const back = d.previous ? actionBtn(`Revenir à ${d.previous.hash}`, 'self-rollback', [], {
     cls: 'danger',
@@ -719,9 +721,11 @@ B.panel = async () => {
     body: [
       stats(
         stat('Version installée', d.hash || '–', d.ts ? `${fmtDate(d.ts)} · ${d.subject}` : ''),
-        stat('Branche suivie', d.remote || d.branch || '–', d.source),
-        stat('Nouveautés', n ? String(n) : 'aucune', n ? 'en attente sur GitHub' : 'le panel est à jour', undefined, n ? 'warn-stat' : ''),
+        d.signed ? stat('Mises à jour', 'signées', d.target ? `prochaine : ${d.target}` : 'versions signées uniquement')
+          : stat('Branche suivie', d.remote || d.branch || '–', d.source),
+        stat('Nouveautés', n ? String(n) : 'aucune', n ? (d.signed ? `dans ${d.target}` : 'en attente sur GitHub') : 'le panel est à jour', undefined, n ? 'warn-stat' : ''),
       ),
+      d.signed === false ? el('div', { class: 'alert warn' }, badge('non vérifiées', 'warn'), el('span', {}, 'Aucune clé de signature n\'est configurée : « Mettre à jour » installe la branche suivie sans vérifier qui l\'a écrite. Voir docs/RELEASING.md.')) : null,
       d.dirty ? el('div', { class: 'alert warn' }, badge('attention', 'warn'), el('span', {}, `Des fichiers ont été modifiés à la main dans ${d.source} : la mise à jour sera refusée.`)) : null,
       n ? card('À installer', table(['Commit', 'Date', 'Description'], d.behind.map(c => [el('span', { class: 'mono' }, c.hash), fmtDate(c.ts), c.subject]))) : null,
       d.previous ? note(`Version précédente gardée pour un retour arrière : ${d.previous.hash} (${fmtDate(d.previous.ts)}) — ${d.previous.subject}.`) : null,
@@ -730,7 +734,7 @@ B.panel = async () => {
         el('div', { class: 'form-actions' }, el('button', { class: 'btn', type: 'button', onclick: exportBundle }, icon('install'), 'Télécharger l\'archive de migration…')),
         note('Les données du serveur (sites, bases, certificats) ne sont pas dedans : elles passent par les sauvegardes (Données › Sauvegardes, copie externe).'),
       ]) : null,
-      note('git pull (avance rapide uniquement) dans le dépôt source, puis ./install.sh app : la configuration (.env) et le mot de passe sont conservés. Après une mise à jour, « Revenir à… » réinstalle la version d\'avant.'),
+      note((d.signed ? 'Seule une version signée par une clé autorisée est installée (avance rapide uniquement), puis ./install.sh app' : 'git pull (avance rapide uniquement) dans le dépôt source, puis ./install.sh app') + ' : la configuration (.env) et le mot de passe sont conservés. Après une mise à jour, « Revenir à… » réinstalle la version d\'avant.'),
       stale(s.updated),
     ],
   };
@@ -777,14 +781,17 @@ function offsiteStat(o) {
   if (o.last_error) return stat('Copie externe', 'en échec', o.last_ok ? `dernière réussie ${ago(o.last_ok)}` : 'jamais réussie', undefined, 'bad');
   return stat('Copie externe', o.last_ok ? ago(o.last_ok) : 'en attente', o.last_ok ? `${o.last_day ? `jour ${o.last_day} · ` : ''}${o.label || ''}` : 'part avec la prochaine sauvegarde');
 }
-const dlArchive = (day, archive = '', label = 'Télécharger') => can('backups.download')
+/* Mirror of backup_holds_panel_secrets() (app/src/rbac.php): the panel's own secrets need « backups.panel ». */
+const panelSecret = ({ db = '', archive = null, pre = '' }) => pre ? /^\d{8}-\d{6}-hostkeep\.sql\.gz$/.test(pre) : archive !== null ? archive === '' || archive === 'hostkeep' : db === 'hostkeep';
+const canBackupDl = what => can('backups.download') && (!panelSecret(what) || can('backups.panel'));
+const dlArchive = (day, archive = '', label = 'Télécharger') => canBackupDl({ archive })
   ? el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', day, archive })}`, download: '' }, label) : null;
 const dayLabel = day => new Date(`${day}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
 B.backups = async () => {
   const [s, o] = await Promise.all([section('backups'), section('offsite')]);
   const d = s.data || {}, off = o.data || {};
-  const dl = (day, db) => can('backups.download') ? el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', day, db })}` }, 'Télécharger') : null;
+  const dl = (day, db) => canBackupDl({ db }) ? el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', day, db })}` }, 'Télécharger') : null;
   const last = d.days?.[0];
   return {
     actions: [
@@ -797,7 +804,7 @@ B.backups = async () => {
           undefined, !last || d.enabled === false || last.errors?.length ? 'bad' : ''),
         offsiteStat(off),
         stat('Espace utilisé', fmtBytes(d.total), `${plural(d.days?.length ?? 0, 'jour')} · bases ${d.keep ?? 7} j, fichiers ${d.files_enabled ? `${d.files_keep ?? 3} j` : 'non'}${d.free ? ` · ${fmtBytes(d.free)} libres` : ''}`)),
-      last && can('backups.download') ? card(null, el('div', { class: 'row-between' },
+      last && canBackupDl({ archive: '' }) ? card(null, el('div', { class: 'row-between' },
         el('div', {}, el('strong', {}, 'Archive complète du dernier jour'), el('p', { class: 'muted small' },
           `${dayLabel(last.day)} : ${plural(last.files.length, 'base')}${last.archives?.length ? `, ${last.archives.map(a => a.name).join(', ')}` : ''} — ${fmtBytes(last.size)}, en un seul fichier .tar`)),
         dlArchive(last.day, '', 'Télécharger l\'archive complète'))) : null,
@@ -807,12 +814,12 @@ B.backups = async () => {
           day.errors?.length ? [' ', badge('incomplète', 'warn')] : null),
         day.errors?.length ? el('div', { class: 'alert warn' }, badge('erreur', 'warn'), el('span', {}, day.errors.join(' · '))) : null,
         table(['Base', { label: 'Taille', num: true }, 'Faite à', ''], day.files.map(f => [el('strong', {}, f.db), fmtBytes(f.size), fmtDate(f.mtime),
-          [dl(day.day, f.db), f.db === 'mysql' ? null : actionBtn('Restaurer', 'backup-restore', [day.day, f.db], { cls: 'danger', confirm: `Remplacer le contenu actuel de la base ${f.db} par la sauvegarde du ${day.day} ?\n\nUne copie de l'état actuel est faite juste avant, tu pourras revenir en arrière.` })]])),
+          [dl(day.day, f.db), f.db === 'mysql' || (f.db === 'hostkeep' && !can('backups.panel')) ? null : actionBtn('Restaurer', 'backup-restore', [day.day, f.db], { cls: 'danger', confirm: `Remplacer le contenu actuel de la base ${f.db} par la sauvegarde du ${day.day} ?\n\nUne copie de l'état actuel est faite juste avant, tu pourras revenir en arrière.` })]])),
         day.archives?.length ? table(['Fichiers', 'Dossier', { label: 'Taille', num: true }, ''], day.archives.map(a => [el('strong', {}, a.name), el('span', { class: 'mono small' }, a.path), fmtBytes(a.size), dlArchive(day.day, a.name)])) : null,
         el('p', { class: 'small' }, dlArchive(day.day, '', 'Tout ce jour en un fichier'))))
         : emptyState('Aucune sauvegarde pour l\'instant.')),
       (d.pre || []).length ? card('Copies avant restauration', table(['Fichier', { label: 'Taille', num: true }, 'Date', ''], d.pre.map(p => [el('span', { class: 'mono' }, p.file), fmtBytes(p.size), fmtDate(p.mtime),
-        can('backups.download') ? el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', pre: p.file })}` }, 'Télécharger') : null]))) : null,
+        canBackupDl({ pre: p.file }) ? el('a', { class: 'btn small', href: `/api.php?${new URLSearchParams({ r: 'backupdl', pre: p.file })}` }, 'Télécharger') : null]))) : null,
       note(`Les bases se restaurent ici. Les fichiers se restaurent sur le serveur : « sudo hostkeep restore files <jour> <archive> » (extrait à part, sans rien écraser).${off.enabled ? '' : ' Sans copie externe, une panne du disque emporte aussi les sauvegardes.'}`),
       stale(s.updated),
     ],

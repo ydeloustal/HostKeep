@@ -1,0 +1,2 @@
+# Faux positif : clé factice (« abc ») d'un test des règles rclone.
+10a294d021a35c114544b7e27f500f32c1093ab3:tests/php/rclone_rules_test.php:private-key:23

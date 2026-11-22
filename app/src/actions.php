@@ -175,17 +175,44 @@ function start_action(string $verb, array $args): array
     }
     $r = run_helper(['job', $verb, ...$args]);
     $id = trim($r['out']);
-    if ($r['rc'] !== 0 || !preg_match('/^\d+-\d+$/', $id)) {
+    if ($r['rc'] !== 0 || !preg_match(JOB_ID, $id)) {
         return ['error' => trim($r['err']) ?: 'Le lancement a échoué.'];
     }
     audit(trim($verb . ' ' . implode(' ', $args)), $id);
     return ['job' => $id];
 }
 
-function job_status(string $id): array
+/** Job ids: "<epoch>-<16 random hex>" (older installs: "<epoch>-<pid>", kept 7 days). */
+const JOB_ID = '/^\d+-[0-9a-f]{16}$/D';
+const JOB_ID_ANY = '/^\d+-(\d+|[0-9a-f]{16})$/D';
+
+/**
+ * May $user read this job's output? Its author, or whoever may start the same action (the output can show
+ * configuration excerpts, versions, paths). Jobs are found in the actions journal (one row per start_action()).
+ */
+function job_readable(string $id, array $user): bool
 {
-    if (!preg_match('/^\d+-\d+$/', $id)) {
+    $s = db()->prepare('SELECT user, action FROM audit_log WHERE job = ? ORDER BY id LIMIT 1');
+    $s->execute([$id]);
+    $row = $s->fetch();
+    if (!$row) {
+        return $user['role'] === 'superadmin';
+    }
+    if ($row['user'] === $user['username']) {
+        return true;
+    }
+    $words = explode(' ', (string) $row['action']);
+    $perm = action_permission(array_shift($words), $words);
+    return $perm !== null && can($user, $perm);
+}
+
+function job_status(string $id, array $user): array
+{
+    if (!preg_match(JOB_ID_ANY, $id)) {
         return ['error' => 'id invalide'];
+    }
+    if (!job_readable($id, $user)) {
+        return ['error' => 'tâche inconnue'];   // same answer as a missing job: ids cannot be probed
     }
     $log = JOBS_DIR . "/$id.log";
     if (!is_file($log)) {
