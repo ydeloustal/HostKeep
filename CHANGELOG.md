@@ -9,9 +9,14 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 - **Sauvegarde externe, destination « Autre » : la configuration rclone collée est désormais une liste blanche.** rclone tourne en root dans le collecteur ; certaines de ses options lancent un programme ou lisent un fichier local (`ssh`, `*_command`, `*_file`, backends `local`, `alias`, `union`, `crypt`…), ce qui permettait à un compte Administrateur d'exécuter des commandes en root. Seuls les backends de stockage distants courants et les options d'identification et d'adresse sont acceptés ; le refus nomme l'option en cause.
 - La règle est vérifiée à l'enregistrement **et** à chaque écriture de `rclone.conf` : une configuration enregistrée avant cette version et devenue invalide fait échouer la copie externe avec une alerte qui explique quoi corriger (rien n'est envoyé tant qu'elle n'est pas corrigée).
 - `rclone.conf` : une valeur contenant un caractère de contrôle (saut de ligne…) est refusée, pour qu'aucun réglage ne puisse ajouter d'options.
+- **Un Administrateur ne peut plus obtenir les secrets du panel.** Il pouvait lire `/var/www/hostkeep/.env` (clé de chiffrement de tous les secrets) dans l'explorateur et télécharger la base `hostkeep`, puis déchiffrer les secrets de double authentification des Super Admins et les identifiants enregistrés.
+  - Explorateur : les fichiers de Hostkeep (`/var/www/hostkeep`, `/etc/hostkeep`, `/var/lib/hostkeep`, `/var/backups/hostkeep`) sont toujours refusés, y compris par lien symbolique ou `..`, quelles que soient les racines configurées.
+  - Nouvelle permission **`backups.panel`** (Super Admin) pour télécharger ou restaurer la base `hostkeep`, sa copie avant restauration, l'archive de fichiers `hostkeep` et l'archive complète d'un jour (qui les contient).
+  - Le `.env` du panel n'est plus dans l'archive `www` : il est sauvegardé dans l'archive `hostkeep`. Restaurer les deux le remet en place.
+  - Les archives `www` faites **avant** cette version contiennent encore ce `.env` : elles disparaissent à la fin de la conservation des fichiers (3 jours par défaut).
 
 ### Tests
-- Premier test automatisé (`tests/php/rclone_rules_test.php`), exécuté par le CI sous PHP 8.1 et la version du runner.
+- Premiers tests automatisés, exécutés par le CI : `tests/php/` (règles rclone, rôles et sauvegardes sensibles, sous PHP 8.1 et la version du runner) et `tests/helper/` (règles de l'explorateur du helper root, sans root).
 
 ## [2.9.0] — 2026-11-21
 

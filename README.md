@@ -181,6 +181,7 @@ Les comptes se gèrent dans **Administration › Utilisateurs** (ou en ligne de 
 | Fichiers, téléchargement des sauvegardes, journal des actions | | | ✔ | ✔ |
 | Comptes de rang inférieur, paramètres généraux / SMTP / alertes / sauvegardes | | | ✔ | ✔ |
 | Comptes administrateurs, paramètres de sécurité, mise à jour du panel, domaine | | | | ✔ |
+| Sauvegardes contenant les secrets du panel (base et archive `hostkeep`, archive complète d'un jour) | | | | ✔ |
 
 - **Création** : mot de passe temporaire généré (affiché une fois, à changer à la première connexion), invitation par e-mail (lien valable 72 h), ou mot de passe choisi.
 - **Connexion** par identifiant ou e-mail ; **mot de passe oublié** par e-mail si le SMTP est configuré.
@@ -329,7 +330,7 @@ Le panel a des pouvoirs d'administration : **protège-le comme un accès SSH.**
 - **Double authentification TOTP** obligatoire pour les comptes administrateurs (réglable), secret chiffré, un code ne sert qu'une fois, codes de secours hachés.
 - Blocage après 5 échecs par IP **et** par compte (réglable), puis bannissement fail2ban.
 - Mot de passe SMTP chiffré (AES-256-GCM), liens de réinitialisation à usage unique (seul leur hash est stocké).
-- Journal de toutes les actions. Explorateur de fichiers en lecture seule, clés privées toujours refusées.
+- Journal de toutes les actions. Explorateur de fichiers en lecture seule : clés privées et fichiers de Hostkeep (dont sa clé de chiffrement) toujours refusés.
 - `.env` hors de la racine web, lisible seulement par root et le groupe `hostkeep`, ignoré par Git.
 
 **À faire de ton côté**

@@ -28,7 +28,10 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src php:8.1-cli sh -c 'for t in tests/php/*_test.php; do php "$t" || exit 1; done'
 
       - name: Shell — shellcheck
-        run: shellcheck -S warning install.sh system/hostkeep-action system/hostkeep-cli system/restore.sh
+        run: shellcheck -S warning install.sh system/hostkeep-action system/hostkeep-cli system/restore.sh tests/helper/*.sh
+
+      - name: Helper root — tests
+        run: for t in tests/helper/*_test.sh; do bash "$t"; done
 
       - name: JavaScript — syntaxe
         run: for f in $(git ls-files 'app/public/*.js'); do node --check "$f"; done
