@@ -708,7 +708,9 @@ B.panel = async () => {
   const n = (d.behind || []).length;
   const btn = actionBtn(n ? `Mettre à jour (${n})` : 'Vérifier et mettre à jour', 'self-update', [], {
     cls: n ? 'primary' : '',
-    confirm: 'Récupérer la dernière version depuis GitHub (git pull) et réinstaller le panel ? La page sera indisponible quelques secondes.',
+    confirm: d.signed
+      ? `Installer ${d.target || 'la dernière version signée'} (signature vérifiée) et réinstaller le panel ? La page sera indisponible quelques secondes.`
+      : 'Récupérer la dernière version de la branche depuis GitHub, SANS vérification de signature, et réinstaller le panel ? La page sera indisponible quelques secondes.',
   });
   const back = d.previous ? actionBtn(`Revenir à ${d.previous.hash}`, 'self-rollback', [], {
     cls: 'danger',
@@ -719,9 +721,11 @@ B.panel = async () => {
     body: [
       stats(
         stat('Version installée', d.hash || '–', d.ts ? `${fmtDate(d.ts)} · ${d.subject}` : ''),
-        stat('Branche suivie', d.remote || d.branch || '–', d.source),
-        stat('Nouveautés', n ? String(n) : 'aucune', n ? 'en attente sur GitHub' : 'le panel est à jour', undefined, n ? 'warn-stat' : ''),
+        d.signed ? stat('Mises à jour', 'signées', d.target ? `prochaine : ${d.target}` : 'versions signées uniquement')
+          : stat('Branche suivie', d.remote || d.branch || '–', d.source),
+        stat('Nouveautés', n ? String(n) : 'aucune', n ? (d.signed ? `dans ${d.target}` : 'en attente sur GitHub') : 'le panel est à jour', undefined, n ? 'warn-stat' : ''),
       ),
+      d.signed === false ? el('div', { class: 'alert warn' }, badge('non vérifiées', 'warn'), el('span', {}, 'Aucune clé de signature n\'est configurée : « Mettre à jour » installe la branche suivie sans vérifier qui l\'a écrite. Voir docs/RELEASING.md.')) : null,
       d.dirty ? el('div', { class: 'alert warn' }, badge('attention', 'warn'), el('span', {}, `Des fichiers ont été modifiés à la main dans ${d.source} : la mise à jour sera refusée.`)) : null,
       n ? card('À installer', table(['Commit', 'Date', 'Description'], d.behind.map(c => [el('span', { class: 'mono' }, c.hash), fmtDate(c.ts), c.subject]))) : null,
       d.previous ? note(`Version précédente gardée pour un retour arrière : ${d.previous.hash} (${fmtDate(d.previous.ts)}) — ${d.previous.subject}.`) : null,
@@ -730,7 +734,7 @@ B.panel = async () => {
         el('div', { class: 'form-actions' }, el('button', { class: 'btn', type: 'button', onclick: exportBundle }, icon('install'), 'Télécharger l\'archive de migration…')),
         note('Les données du serveur (sites, bases, certificats) ne sont pas dedans : elles passent par les sauvegardes (Données › Sauvegardes, copie externe).'),
       ]) : null,
-      note('git pull (avance rapide uniquement) dans le dépôt source, puis ./install.sh app : la configuration (.env) et le mot de passe sont conservés. Après une mise à jour, « Revenir à… » réinstalle la version d\'avant.'),
+      note((d.signed ? 'Seule une version signée par une clé autorisée est installée (avance rapide uniquement), puis ./install.sh app' : 'git pull (avance rapide uniquement) dans le dépôt source, puis ./install.sh app') + ' : la configuration (.env) et le mot de passe sont conservés. Après une mise à jour, « Revenir à… » réinstalle la version d\'avant.'),
       stale(s.updated),
     ],
   };

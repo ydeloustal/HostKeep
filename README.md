@@ -215,7 +215,7 @@ sudo hostkeep passwd bob [--generate]   # nouveau mot de passe (ferme ses sessio
 sudo hostkeep unlock bob                # débloque un compte après des échecs
 sudo hostkeep 2fa-reset bob             # retire la double authentification (téléphone perdu)
 sudo hostkeep web [mode] [--domain D]   # reconfigure la publication
-sudo hostkeep update                    # git pull + réinstallation
+sudo hostkeep update                    # dernière version (signée si une clé est configurée) + réinstallation
 sudo hostkeep backup                    # sauvegarde maintenant (bases + fichiers + copie externe)
 sudo hostkeep restore list              # jours sauvegardés sur ce serveur
 sudo hostkeep restore fetch [jour]      # jours de la copie externe, ou en rapatrie un ici
@@ -351,7 +351,7 @@ Le panel a des pouvoirs d'administration : **protège-le comme un accès SSH.**
 
 ## 🔄 Mise à jour
 
-**Depuis le panel :** *Sécurité › Version du panel*, bouton **Mettre à jour** (Super Admin). Le panel vérifie chaque heure s'il y a des nouveautés sur GitHub et l'affiche dans les alertes. Un bouton **Revenir à…** réinstalle la version précédente.
+**Depuis le panel :** *Sécurité › Version du panel*, bouton **Mettre à jour** (Super Admin). Dès qu'une clé de signature est déclarée dans `system/allowed_signers`, seules les versions **signées** sont installées ([`docs/RELEASING.md`](docs/RELEASING.md)). Le panel vérifie chaque heure s'il y a des nouveautés sur GitHub et l'affiche dans les alertes. Un bouton **Revenir à…** réinstalle la version précédente.
 
 **En SSH :** `sudo hostkeep update` (ou relancer la commande d'installation en une ligne).
 

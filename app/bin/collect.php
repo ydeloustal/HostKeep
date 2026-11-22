@@ -361,8 +361,12 @@ function c_panel(): void
     $git = 'GIT_TERMINAL_PROMPT=0 git -C ' . escapeshellarg($src) . ' ';
     sh('timeout 60 ' . $git . 'fetch --quiet --prune');
     [$hash, $ts, $subject] = array_pad(explode("\t", trim(sh($git . "log -1 --format='%h%x09%ct%x09%s'")), 3), 3, '');
+    // signed updates: what is waiting is the newest signed release tag, not the branch (system/hostkeep-action)
+    $check = preg_split('/\s+/', trim(sh('/usr/local/sbin/hostkeep-action update-check')));
+    $signed = ($check[0] ?? '') === 'signed';
+    $target = $signed ? (preg_match('/^v[0-9][A-Za-z0-9._-]*$/D', $check[1] ?? '') ? $check[1] : null) : '@{u}';
     $behind = [];
-    foreach (lines(sh($git . "log --format='%h%x09%ct%x09%s' 'HEAD..@{u}'")) as $l) {
+    foreach ($target === null ? [] : lines(sh($git . "log --format='%h%x09%ct%x09%s' " . escapeshellarg("HEAD..$target"))) as $l) {
         [$h, $t, $s] = array_pad(explode("\t", $l, 3), 3, '');
         $behind[] = ['hash' => $h, 'ts' => (int) $t, 'subject' => $s];
     }
@@ -372,7 +376,7 @@ function c_panel(): void
         [$ph, $pt, $ps] = array_pad(explode("\t", trim(sh($git . "log -1 --format='%h%x09%ct%x09%s' " . $prev)), 3), 3, '');
         $previous = $ph !== '' ? ['hash' => $ph, 'ts' => (int) $pt, 'subject' => $ps] : null;
     }
-    save('panel', ['git' => true, 'source' => $src, 'previous' => $previous, 'branch' => trim(sh($git . 'rev-parse --abbrev-ref HEAD')),
+    save('panel', ['git' => true, 'signed' => $signed, 'target' => $signed ? $target : null, 'source' => $src, 'previous' => $previous, 'branch' => trim(sh($git . 'rev-parse --abbrev-ref HEAD')),
         'remote' => trim(sh($git . "rev-parse --abbrev-ref '@{u}'")), 'hash' => $hash, 'ts' => (int) $ts, 'subject' => $subject,
         'behind' => $behind, 'dirty' => trim(sh($git . 'status --porcelain --untracked-files=no')) !== '']);
 }

@@ -9,7 +9,7 @@
 #   sudo hostkeep unlock bob             unlock an account after failed logins
 #   sudo hostkeep 2fa-reset bob          remove the two-factor authentication (lost phone and recovery codes)
 #   sudo hostkeep web [apache|nginx|caddy|proxy|none] [--domain D] [--https yes|no]
-#   sudo hostkeep update                 git pull + reinstall (same as the panel's update button)
+#   sudo hostkeep update                 install the newest version (signed tag when a key is configured), same as the panel's button
 #   sudo hostkeep collect [mode]         run the collector now
 #   sudo hostkeep backup                 back up now (databases + files, then the off-site copy)
 #   sudo hostkeep restore list           backup days on this server
@@ -88,8 +88,8 @@ case $cmd in
   passwd|unlock|enable|disable|role|2fa-reset) user "$cmd" "$@" ;;
   web) installer web "$@" ;;
   update)
-    [[ -d $SRC/.git ]] || { echo "Pas de clone git dans $SRC : mise à jour impossible." >&2; exit 1; }
-    git -C "$SRC" pull --ff-only && installer app ;;
+    # same path as the panel's button: signed release tags when a signing key is configured (docs/RELEASING.md)
+    /usr/local/sbin/hostkeep-action update-now ;;
   collect) php "$APP/bin/collect.php" "${1:-all}" ;;
   backup) php "$APP/bin/collect.php" backup --force ;;
   restore) restore "$@" ;;

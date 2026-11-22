@@ -96,6 +96,22 @@ source_dir() {
   echo "$d"
 }
 
+# Signed updates: public keys allowed to sign release tags (ssh-keygen « allowed signers » format), copied by
+# install.sh from the version installed before, so a new commit cannot vouch for itself. No key yet: updates
+# follow the branch as before, with a warning (see docs/RELEASING.md).
+SIGNERS=/usr/local/share/hostkeep/allowed_signers
+signed_mode() { [[ -f $SIGNERS ]] && grep -qvE '^[[:space:]]*(#|$)' "$SIGNERS"; }
+verify_tag() { git -C "$1" -c gpg.format=ssh -c gpg.ssh.allowedSignersFile="$SIGNERS" verify-tag "$2" >/dev/null 2>&1; }
+# newest release tag (vX.Y.Z) that descends from HEAD and carries a valid signature; empty when none
+latest_signed_tag() {
+  local src=$1 t
+  for t in $(git -C "$src" tag --list 'v[0-9]*' --sort=-v:refname); do
+    git -C "$src" merge-base --is-ancestor HEAD "$t" 2>/dev/null || continue
+    if verify_tag "$src" "$t"; then echo "$t"; return 0; fi
+    echo "Tag $t ignoré : signature absente ou inconnue." >&2
+  done
+}
+
 configtest() { echo "# apache2ctl configtest"; apache2ctl configtest 2>&1 | grep -v AH00558; return "${PIPESTATUS[0]}"; }
 
 # ---------- audit fixes (Sécurité › Audit › Corriger): one global file per fix, checked, rolled back on error ----------
@@ -249,20 +265,28 @@ run() {
     apt-update)
       apt-get update && php "$APP/bin/collect.php" updates && apt list --upgradable 2>/dev/null ;;
     self-update)
-      local src branch new
+      local src branch new target
       src=$(source_dir) || { echo "$src"; return 1; }
       export GIT_TERMINAL_PROMPT=0
       branch=$(git -C "$src" rev-parse --abbrev-ref HEAD) || return 1
       git -C "$src" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1 || { echo "La branche $branch ne suit aucune branche distante."; return 1; }
       [[ -z $(git -C "$src" status --porcelain --untracked-files=no) ]] || { echo "Des fichiers ont été modifiés à la main dans $src : mise à jour annulée."; git -C "$src" status --short; return 1; }
       echo "# git fetch ($src, branche $branch)"
-      timeout 60 git -C "$src" fetch --prune || return 1
-      new=$(git -C "$src" log --format='%h %s' 'HEAD..@{u}')
+      timeout 60 git -C "$src" fetch --prune --tags --force || return 1
+      if signed_mode; then
+        target=$(latest_signed_tag "$src")
+        if [[ -z $target ]]; then echo "Aucune version signée plus récente : Hostkeep est à jour ($(git -C "$src" log -1 --format='%h, %cd' --date=short))."; return 0; fi
+        echo "Version signée trouvée : $target (signature vérifiée)."
+      else
+        echo "ATTENTION : aucune clé de signature n'est configurée, la mise à jour installe la branche $branch sans vérifier son auteur (voir docs/RELEASING.md)."
+        target='@{u}'
+      fi
+      new=$(git -C "$src" log --format='%h %s' "HEAD..$target")
       if [[ -z $new ]]; then echo "Hostkeep est déjà à jour ($(git -C "$src" log -1 --format='%h, %cd' --date=short))."; return 0; fi
       echo "Nouveautés :"; echo "$new" | sed 's/^/  /'
       git -C "$src" rev-parse HEAD > "$PREVIOUS_FILE.tmp" && mv "$PREVIOUS_FILE.tmp" "$PREVIOUS_FILE"
-      echo "# git merge --ff-only"
-      git -C "$src" merge --ff-only '@{u}' || { echo "Historique divergent : mise à jour annulée, rien n'a été modifié."; rm -f "$PREVIOUS_FILE"; return 1; }
+      echo "# git merge --ff-only $target"
+      git -C "$src" merge --ff-only "$target" || { echo "Historique divergent : mise à jour annulée, rien n'a été modifié."; rm -f "$PREVIOUS_FILE"; return 1; }
       echo "# ./install.sh app"
       "$src/install.sh" app || return 1
       echo "Hostkeep mis à jour : $(git -C "$src" log -1 --format='%h %s'). Recharge la page." ;;
@@ -345,6 +369,13 @@ fs_private() { [[ $(basename -- "$1") =~ (privkey|\.key$|^id_(rsa|ed25519|ecdsa|
 
 cmd=${1:-}; shift || true
 case $cmd in
+  update-check)
+    # read-only, for the collector: « signed <newest signed tag or -> » or « unsigned »
+    if signed_mode; then src=$(source_dir) || die "$src"; t=$(latest_signed_tag "$src" 2>/dev/null); echo "signed ${t:--}"; else echo unsigned; fi ;;
+  update-now)
+    # « sudo hostkeep update »: same checks as the panel's button, in the foreground. Root only, not the web app.
+    [[ ${SUDO_USER:-} != hostkeep ]] || die "commande réservée à root"
+    run self-update ;;
   job)
     validate "$@"
     # random part: an id cannot be guessed to read the output of someone else's job

@@ -332,6 +332,8 @@ cmd_app() {
   install -o root -g root -m 755 "$SRC/system/hostkeep-cli" /usr/local/bin/hostkeep
   install -d -o root -g root -m 755 /usr/local/share/hostkeep/hardening   # used by « Corriger » in the audit
   install -o root -g root -m 644 "$SRC"/system/hardening/*.conf "$SRC"/system/hardening/*.caddy /usr/local/share/hostkeep/hardening/
+  # keys allowed to sign the release tags installed by « Mettre à jour » (docs/RELEASING.md)
+  install -o root -g root -m 644 "$SRC/system/allowed_signers" /usr/local/share/hostkeep/allowed_signers
   visudo -cf "$SRC/system/sudoers-hostkeep" >/dev/null
   install -o root -g root -m 440 "$SRC/system/sudoers-hostkeep" /etc/sudoers.d/hostkeep
   sudo -n -u hostkeep sudo -n -l /usr/local/sbin/hostkeep-action >/dev/null || die "règle sudoers non prise en compte."
