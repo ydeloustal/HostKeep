@@ -347,7 +347,8 @@ cmd=${1:-}; shift || true
 case $cmd in
   job)
     validate "$@"
-    id="$(date +%s)-$$"
+    # random part: an id cannot be guessed to read the output of someone else's job
+    id="$(date +%s)-$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
     log="$JOBS/$id.log"
     : > "$log" && chgrp hostkeep "$log" && chmod 640 "$log" || die "impossible de créer le journal de la tâche"
     # Transient unit: the job lives outside PHP-FPM's cgroup, so restarting php-fpm does not kill it.
@@ -356,7 +357,7 @@ case $cmd in
     echo "$id" ;;
   _run)
     id=${1:-}; shift || true
-    [[ $id =~ ^[0-9]+-[0-9]+$ ]] || die "id"
+    [[ $id =~ ^[0-9]+-[0-9a-f]{16}$ ]] || die "id"
     validate "$@"
     echo "### $(date '+%F %T') — $*"
     run "$@"; rc=$?

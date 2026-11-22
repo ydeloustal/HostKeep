@@ -57,12 +57,23 @@ function backup_summary(): array
 }
 
 /** Server state summary and alerts: home page, header pill, and e-mail alerts (collector). */
+/**
+ * Identity of an alert for the notifications: its level and its stable key (the text when it has none).
+ * A level change (warning → critical) is a new alert; a changing number in the text is not.
+ */
+function alert_notify_key(array $a): string
+{
+    return md5($a['level'] . ($a['key'] ?? $a['text']));   // same value as before 2.10 for the alerts without a key
+}
+
 function overview(): array
 {
     $last = db()->query('SELECT * FROM metrics ORDER BY ts DESC LIMIT 1')->fetch() ?: null;
     $alerts = [];
-    $add = static function (string $level, string $text, string $section) use (&$alerts): void {
-        $alerts[] = ['level' => $level, 'text' => $text, 'section' => $section];
+    // $key: stable identity of the alert when its text holds a changing value (a percentage, a count, an error
+    // message): notifications are sent once per key and level, not each time the number moves.
+    $add = static function (string $level, string $text, string $section, ?string $key = null) use (&$alerts): void {
+        $alerts[] = ['level' => $level, 'text' => $text, 'section' => $section, 'key' => $key ?? $text];
     };
 
     if (!$last || time() - (int) $last['ts'] > 180) {
@@ -71,17 +82,17 @@ function overview(): array
     if ($last) {
         $diskPct = 100 * $last['disk_used'] / max(1, $last['disk_total']);
         if ($diskPct > 85) {
-            $add($diskPct > 95 ? 'crit' : 'warn', sprintf('Disque / rempli à %.0f %%.', $diskPct), 'storage');
+            $add($diskPct > 95 ? 'crit' : 'warn', sprintf('Disque / rempli à %.0f %%.', $diskPct), 'storage', 'disk:/');
         }
         $memPct = 100 * $last['mem_avail'] / max(1, $last['mem_total']);
         if ($memPct < 10) {
-            $add('warn', sprintf('RAM disponible faible : %.0f %%.', $memPct), 'resources');
+            $add('warn', sprintf('RAM disponible faible : %.0f %%.', $memPct), 'resources', 'ram:low');
         }
     }
     $svc = snapshot('services')['data'] ?? [];
     foreach ($svc['units'] ?? [] as $u) {
         if (($u['ActiveState'] ?? '') !== 'active') {
-            $add('crit', "Service {$u['Id']} : {$u['ActiveState']}.", 'services');
+            $add('crit', "Service {$u['Id']} : {$u['ActiveState']}.", 'services', "service:{$u['Id']}");
         }
     }
     foreach ($svc['failed'] ?? [] as $f) {
@@ -97,12 +108,12 @@ function overview(): array
         if ($s['code'] >= 200 && $s['code'] < 500) {
             $up++;
         } else {
-            $add('crit', "Site {$s['name']} injoignable (HTTP {$s['code']}).", 'sites');
+            $add('crit', "Site {$s['name']} injoignable (HTTP {$s['code']}).", 'sites', "site:{$s['name']}");
         }
     }
     foreach (snapshot('certs')['data']['certs'] ?? [] as $c) {
         if ($c['days'] < 15) {
-            $add($c['days'] < 5 ? 'crit' : 'warn', "Certificat {$c['name']} expire dans {$c['days']} j.", 'certs');
+            $add($c['days'] < 5 ? 'crit' : 'warn', "Certificat {$c['name']} expire dans {$c['days']} j.", 'certs', "cert:{$c['name']}");
         }
     }
     $sec = security_live(snapshot('security')['data'] ?? []);
@@ -115,17 +126,17 @@ function overview(): array
     $panel = snapshot('panel')['data'] ?? [];
     if (!empty($panel['behind'])) {
         $n = count($panel['behind']);
-        $add('info', "Mise à jour de Hostkeep disponible ($n nouveauté" . ($n > 1 ? 's' : '') . ').', 'panel');
+        $add('info', "Mise à jour de Hostkeep disponible ($n nouveauté" . ($n > 1 ? 's' : '') . ').', 'panel', 'panel:update');
     }
     $upd = snapshot('updates')['data'] ?? [];
     if (!empty($upd['security_count'])) {
-        $add('warn', "{$upd['security_count']} mise(s) à jour de sécurité en attente.", 'updates');
+        $add('warn', "{$upd['security_count']} mise(s) à jour de sécurité en attente.", 'updates', 'updates:security');
     }
     $scan = snapshot('secscan')['data'] ?? null;
     if ($scan) {
         $crit = count(array_filter($scan['findings'], fn($f) => $f['severity'] === 'crit'));
         if ($crit) {
-            $add('crit', "Audit de sécurité : $crit problème(s) critique(s) (fichiers sensibles exposés…).", 'security');
+            $add('crit', "Audit de sécurité : $crit problème(s) critique(s) (fichiers sensibles exposés…).", 'security', 'secscan:crit');
         }
     }
     $forecast = disk_forecast();
@@ -137,25 +148,25 @@ function overview(): array
     if ($backup['day'] === null || $backup['day'] < date('Y-m-d', time() - 2 * 86400)) {
         $add('warn', 'Aucune sauvegarde depuis plus de 2 jours.', 'backups');
     } elseif ($backup['errors']) {
-        $add('warn', 'Dernière sauvegarde incomplète : ' . mb_strimwidth($backup['errors'][0], 0, 160, '…'), 'backups');
+        $add('warn', 'Dernière sauvegarde incomplète : ' . mb_strimwidth($backup['errors'][0], 0, 160, '…'), 'backups', 'backup:incomplete');
     }
     $off = $backup['offsite'];
     if ($off['enabled']) {
         if ($off['last_error']) {
-            $add('warn', 'Copie externe des sauvegardes en échec : ' . mb_strimwidth($off['last_error'], 0, 160, '…'), 'backups');
+            $add('warn', 'Copie externe des sauvegardes en échec : ' . mb_strimwidth($off['last_error'], 0, 160, '…'), 'backups', 'offsite:error');
         } elseif ($off['last_ok'] && $off['last_ok'] < time() - 36 * 3600) {
-            $add('warn', 'Aucune copie externe réussie depuis ' . intdiv(time() - $off['last_ok'], 3600) . ' h.', 'backups');
+            $add('warn', 'Aucune copie externe réussie depuis ' . intdiv(time() - $off['last_ok'], 3600) . ' h.', 'backups', 'offsite:stale');
         } elseif (!$off['last_ok']) {
             $add('info', 'Copie externe activée : la première partira avec la prochaine sauvegarde (ou « Envoyer maintenant »).', 'backups');
         }
     }
     $hb = snapshot('heartbeat')['data'] ?? [];
     if (!empty($hb['enabled']) && !empty($hb['last_error'])) {
-        $add('warn', 'Le ping de surveillance externe échoue (' . mb_strimwidth($hb['last_error'], 0, 120, '…') . ') : le service externe croira le serveur en panne.', 'notify');
+        $add('warn', 'Le ping de surveillance externe échoue (' . mb_strimwidth($hb['last_error'], 0, 120, '…') . ') : le service externe croira le serveur en panne.', 'notify', 'heartbeat:error');
     }
     foreach (snapshot('pm2')['data']['apps'] ?? [] as $a) {
         if ($a['status'] !== 'online') {
-            $add('crit', "Appli PM2 {$a['name']} : {$a['status']}.", 'cron');
+            $add('crit', "Appli PM2 {$a['name']} : {$a['status']}.", 'cron', "pm2:{$a['name']}");
         }
     }
 

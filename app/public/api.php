@@ -251,7 +251,7 @@ try {
             json_out(read_log((string) ($_GET['key'] ?? ''), (int) ($_GET['lines'] ?? 200)));
 
         case 'job':
-            json_out(job_status((string) ($_GET['id'] ?? '')));
+            json_out(job_status((string) ($_GET['id'] ?? ''), $me));
 
         case 'traffic':
             json_out(traffic((int) ($_GET['days'] ?? 7), (string) ($_GET['host'] ?? '')));

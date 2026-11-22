@@ -33,7 +33,7 @@ putenv('PM2_HOME=/root/.pm2');
 putenv('LC_ALL=C');
 
 $mode = $argv[1] ?? 'minute';
-$modes = ['minute' => ['metrics', 'services', 'processes', 'schedule', 'heartbeat'],   // heartbeat last: it reports the others
+$modes = ['minute' => ['metrics', 'services', 'processes', 'schedule', 'jobs', 'heartbeat'],   // heartbeat last: it reports the others
     '5min' => ['sites', 'certs', 'pm2', 'security', 'databases', 'traffic', 'perf', 'notify'],
     'hourly' => ['storage', 'cron', 'updates', 'logkeys', 'offsite', 'backups', 'panel'],
     'purge' => ['purge'],
@@ -419,6 +419,29 @@ function c_purge(): void
     }
 }
 
+/**
+ * Writes the result of finished jobs into the actions journal. The panel does it when someone watches the job;
+ * without this, a job whose window was closed kept an empty result forever. A job with no result file after
+ * a day (helper killed, server rebooted) is recorded as failed (-1).
+ */
+function c_jobs(): void
+{
+    global $pdo;
+    $rows = $pdo->query('SELECT DISTINCT job, ts FROM audit_log WHERE job IS NOT NULL AND rc IS NULL AND ts > ' . (time() - 8 * 86400))->fetchAll();
+    $upd = $pdo->prepare('UPDATE audit_log SET rc = ? WHERE job = ? AND rc IS NULL');
+    foreach ($rows as $r) {
+        if (!preg_match('/^\d+-(\d+|[0-9a-f]{16})$/D', (string) $r['job'])) {
+            continue;
+        }
+        $rcFile = "/var/lib/hostkeep/jobs/{$r['job']}.rc";
+        if (is_file($rcFile)) {
+            $upd->execute([(int) trim((string) file_get_contents($rcFile)), $r['job']]);
+        } elseif ((int) $r['ts'] < time() - 86400) {
+            $upd->execute([-1, $r['job']]);
+        }
+    }
+}
+
 /** Applies the backup time chosen in the settings to the systemd timer (drop-in), when it changed. */
 function c_schedule(): void
 {
@@ -450,7 +473,7 @@ function c_notify(): void
     $now = [];
     foreach (overview()['alerts'] as $a) {
         if (in_array($a['level'], $levels, true)) {
-            $now[md5($a['level'] . $a['text'])] = $a;
+            $now[alert_notify_key($a)] = $a;
         }
     }
     $before = json_decode((string) @file_get_contents($stateFile), true) ?: [];
