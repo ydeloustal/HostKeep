@@ -1,20 +1,20 @@
 # Phase 1 — Plan détaillé
 
-> **Statut : proposition, en attente de validation.** Aucune ligne de code de la Phase 1 n'est écrite tant que ce plan et les décisions du §1 ne sont pas validés.
+> **Statut : validé le 22/11/2026**, ainsi que les décisions du §1 (D-05, D-08, D-12, D-15, D-16, D-18, D-19, D-20) et D-23 à D-25 telles que recommandées. La Phase 1 peut commencer par la gouvernance (§11).
 > **Base :** HostKeep 2.10.1. **Cible :** 3.0, livrée en plusieurs versions intermédiaires utilisables (§3).
 > **Principe :** chaque tâche se termine **terminée, testée et documentée** (§6). On ne sacrifie pas l'architecture pour aller plus vite.
 
 ---
 
-## 1. Les 8 décisions à valider : conséquences et contraintes
+## 1. Les 8 décisions : conséquences et contraintes (validées le 22/11/2026)
 
-Rien ci-dessous n'est considéré comme validé. Pour chaque décision : ce qu'elle implique concrètement, ce qu'elle contraint, et ce qui reste à trancher.
+Validées après présentation des conséquences ci-dessous. Pour chaque décision : ce qu'elle implique concrètement, ce qu'elle contraint, et ce qui reste à trancher.
 
 ### D-15 — Licence Apache-2.0
 | | |
 |---|---|
 | **Conséquences** | Remplacer `LICENSE` (MIT → Apache-2.0), ajouter un fichier `NOTICE`, un en-tête `SPDX-License-Identifier: Apache-2.0` dans chaque fichier source, mettre à jour le badge du README. Les versions déjà publiées (≤ 2.10.1) restent sous MIT : c'est irréversible pour elles, et sans conséquence pratique. |
-| **Faisabilité** | Tu es l'auteur unique des 120 commits : tu peux changer la licence seul. Les lignes `Co-Authored-By: Claude` ne créent pas de co-titulaire de droits à consulter. |
+| **Faisabilité** | Tu es l'auteur unique des commits : tu peux changer la licence seul. |
 | **Contraintes** | 1) **Compatibilité des dépendances** : Apache-2.0 est incompatible avec les bibliothèques **GPL-2.0 seulement** ; il faudra n'accepter que MIT, BSD, ISC, Apache-2.0, MPL-2.0 (vérification automatique en CI, tâche P1-08). 2) Apache-2.0 **ne protège pas le nom** : un tiers peut reprendre le code et vendre une version fermée, mais pas sous le nom « HostKeep » si tu définis une politique de marque (fichier `TRADEMARKS.md`, recommandé). 3) Toute modification d'un fichier doit être signalée (clause 4b) : rien à faire de plus en pratique, l'historique git le fait. |
 | **Reste à trancher** | Publier ou non une politique d'usage du nom (recommandé : oui, en même temps). |
 
@@ -61,7 +61,7 @@ Rien ci-dessous n'est considéré comme validé. Pour chaque décision : ce qu'e
 | | |
 |---|---|
 | **Conséquences** | Chaque commit porte une ligne `Signed-off-by: Nom <e-mail>` (`git commit -s`), qui atteste que l'auteur a le droit de soumettre le code sous Apache-2.0 ; vérification automatique sur chaque PR (P1-03). |
-| **Contraintes** | 1) **L'adresse e-mail du commit devient publique** : utilise ton adresse GitHub `noreply`. 2) Pour le code que j'écris avec toi, **c'est toi qui signes** (le DCO engage une personne) ; mes lignes `Co-Authored-By` restent. 3) Le DCO ne permet pas de changer de licence plus tard sans l'accord de chaque contributeur : c'est pourquoi la licence se décide **avant** (D-15). 4) L'historique existant n'est pas réécrit ; la règle s'applique à partir d'une date fixée. |
+| **Contraintes** | 1) **L'adresse e-mail du commit devient publique** : utilise ton adresse GitHub `noreply`. 2) Le DCO engage la personne qui signe : **c'est toi qui signes** chaque commit que tu publies. 3) Le DCO ne permet pas de changer de licence plus tard sans l'accord de chaque contributeur : c'est pourquoi la licence se décide **avant** (D-15). 4) L'historique existant n'est pas réécrit ; la règle s'applique à partir d'une date fixée. |
 
 ### 1.9 Nouvelles décisions apparues en préparant la Phase 1
 | ID | Question | Options | Recommandation |

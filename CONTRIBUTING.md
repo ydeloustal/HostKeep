@@ -56,6 +56,8 @@ docker run --rm -v "$PWD:/src" -w /src php:8.1-cli sh -c 'for t in tests/php/*_t
 
 ## Branches, commits, PR
 
+- Active les hooks du dépôt une fois après le clonage : `git config core.hooksPath tools/git-hooks`. Le hook `commit-msg` refuse les lignes d'attribution générées par des outils (co-auteur IA, pied de page « Generated with … ») ; le CI fait la même vérification sur chaque commit et sur les fichiers.
+
 - Branches depuis `develop` : `feature/…`, `fix/…` ; `main` ne reçoit que les versions publiées.
 - Messages de commit en français, style *Conventional Commits* (`fix(security): …`, `feat: …`, `docs: …`), avec l'identifiant du constat ou de la fonctionnalité quand il existe (`S2`, `NET-02`…).
 - Une PR = un sujet ; mets à jour `CHANGELOG.md` (section *Non publié*) et le README si le comportement change.

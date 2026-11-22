@@ -70,7 +70,7 @@ Hostkeep est aujourd'hui un **panel d'administration mono-serveur**, natif (PHP 
 
 **Hors dépôt, dans la copie de travail :**
 - `admin-dashboard/` (non suivi) : **ancienne version** du projet (nommée « dashboard »), avec cron au lieu de timers, mono-compte. Elle contient le nom d'hôte d'un serveur réel dans son README. **[Recommandation]** ne jamais la committer ; l'archiver hors du dépôt ou l'ajouter au `.gitignore`. (Non supprimée, conformément aux consignes.)
-- `.claude/mock.py` + `launch.json` (ignorés par Git) : serveur de démo Python qui sert `app/public` avec de fausses données. Utile pour développer le front sans serveur ; **[Recommandation]** le versionner dans `tools/` car c'est le seul moyen de faire tourner l'interface localement.
+- Un serveur de démo Python, alors non versionné, qui sert `app/public` avec de fausses données. **[Recommandation]** le versionner dans `tools/` : c'est le seul moyen de faire tourner l'interface localement. *(Fait en 2.10.0 : `tools/mock.py`.)*
 
 ---
 

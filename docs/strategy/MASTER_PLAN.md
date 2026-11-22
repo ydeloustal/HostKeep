@@ -90,7 +90,9 @@ Total indicatif jusqu'à la 4.0 : **15 à 20 mois** (Phase 1 réestimée à 13�
 
 Détails, avantages et inconvénients dans [`TECHNICAL_DECISIONS.md`](TECHNICAL_DECISIONS.md).
 
-### 6.1 À trancher avant de lancer la Phase 1
+### 6.1 Validées le 22/11/2026 (préalables à la Phase 1)
+
+> Choix retenus : **Apache-2.0**, fondations d'abord, anglais de référence avec français disponible, Composer limité, vanilla JS modulaire, marque **« HostKeep »** (identifiants techniques en minuscules), version actuelle + précédente supportées, DCO ; et D-23 MkDocs Material, D-24 PHP 8.1 minimum en 3.x, D-25 signatures SSH. Conséquences : `PHASE_1_PLAN.md` §1.
 
 | ID | Question | Recommandation |
 |---|---|---|
@@ -149,7 +151,7 @@ D-01 (évolution, pas de refonte), D-02 (central en PHP), D-06 (MariaDB), D-07 (
 
 ## 8. Lancer la Phase 1
 
-> Le plan détaillé est dans [`PHASE_1_PLAN.md`](PHASE_1_PLAN.md) (versions 2.11 → 3.0, 13 à 18 semaines). Les 8 décisions du §6.1 sont **en validation** : leurs conséquences y sont décrites (§1), avec trois nouvelles décisions (D-23 à D-25).
+> Le plan détaillé est dans [`PHASE_1_PLAN.md`](PHASE_1_PLAN.md) (versions 2.11 → 3.0, 13 à 18 semaines). Les décisions du §6.1 et D-23 à D-25 sont **validées** (22/11/2026).
 
 Dès que les décisions du §6.1 sont prises :
 1. **ADR du catalogue d'opérations** : format exact, conversion des 21 verbes actuels, génération des validations PHP, du front et des tests.

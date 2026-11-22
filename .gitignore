@@ -25,6 +25,5 @@ tmp/
 Thumbs.db
 
 # Outils locaux
-.claude/
 # ancienne version du projet (contient le nom d'un serveur réel) : ne jamais la publier
 admin-dashboard/
