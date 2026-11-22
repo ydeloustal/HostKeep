@@ -323,15 +323,25 @@ FS_ROOTS=""
 for r in $(env_get HOSTKEEP_FILE_ROOTS "/var/www /etc/apache2 /etc/nginx /etc/php /etc/mysql /etc/cron.d /etc/fail2ban /etc/letsencrypt/renewal /etc/logrotate.d /var/log"); do
   [[ $r == /* && -d $r ]] && FS_ROOTS+="$(realpath -e -- "$r") "
 done
+# Hostkeep's own files (its .env holds the key of every secret of the panel): never shown, whatever the roots.
+PANEL_DIRS="/var/www/hostkeep /etc/hostkeep /var/lib/hostkeep /var/backups/hostkeep"
 fs_path() {
   local p r
   [[ ${1:-} == /* && ${#1} -lt 4096 ]] || { echo "Refusé : chemin" >&2; return 2; }
   p=$(realpath -e -- "$1" 2>/dev/null) || { echo "Refusé : chemin introuvable" >&2; return 2; }
+  for r in $PANEL_DIRS; do
+    if [[ $p == "$r" || $p == "$r/"* ]]; then echo "Refusé : fichiers de Hostkeep" >&2; return 2; fi
+  done
   for r in $FS_ROOTS; do
     if [[ $p == "$r" || $p == "$r/"* ]]; then echo "$p"; return 0; fi
   done
   echo "Refusé : hors des dossiers autorisés" >&2; return 2
 }
+# File names never readable from the panel: private keys.
+fs_private() { [[ $(basename -- "$1") =~ (privkey|\.key$|^id_(rsa|ed25519|ecdsa|dsa)) ]]; }
+
+# Lets the tests source the functions above without running a command.
+[[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
 
 cmd=${1:-}; shift || true
 case $cmd in
@@ -435,7 +445,7 @@ PY
     max=${2:-524288}
     [[ -f $p ]] || die "pas un fichier"
     [[ $max =~ ^[0-9]{1,9}$ ]] && (( max <= 52428800 )) || die "taille"
-    [[ $(basename -- "$p") =~ (privkey|\.key$|^id_(rsa|ed25519|ecdsa)) ]] && die "clé privée : lecture refusée"
+    fs_private "$p" && die "clé privée : lecture refusée"
     head -c "$max" -- "$p" ;;
   *) die "commande inconnue" ;;
 esac

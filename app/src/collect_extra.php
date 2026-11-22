@@ -17,6 +17,11 @@ function backup_keep_days(): int
 
 /** Folders saved as files/<name>.tar.gz (paths relative to /), when they exist. */
 const BACKUP_SOURCES = ['www' => 'var/www', 'apache2' => 'etc/apache2', 'nginx' => 'etc/nginx', 'caddy' => 'etc/caddy', 'letsencrypt' => 'etc/letsencrypt', 'hostkeep' => 'etc/hostkeep'];
+/**
+ * The panel's .env holds the key of all its secrets: kept out of "www" (downloadable by Administrators) and saved
+ * in "hostkeep" instead (Super Admin only, see backup_holds_panel_secrets()). Restoring both puts it back in place.
+ */
+const BACKUP_PANEL_ENV = 'var/www/hostkeep/.env';
 
 function backup_files_keep_days(): int
 {
@@ -118,7 +123,13 @@ function backup_files(string $dir, array &$items, array &$errors): void
         foreach ($excludes as $e) {
             $cmd[] = "--exclude=$e";
         }
+        if ($name === 'www') {
+            $cmd[] = '--exclude=' . BACKUP_PANEL_ENV;
+        }
         array_push($cmd, '-C', '/', $path);
+        if ($name === 'hostkeep' && is_file('/' . BACKUP_PANEL_ENV)) {
+            $cmd[] = BACKUP_PANEL_ENV;
+        }
         $out = [];
         exec(implode(' ', array_map('escapeshellarg', $cmd)) . ' 2>&1', $out, $rc);
         if ($rc <= 1 && is_file("$f.tmp")) {   // 1 = some files changed while being read: the archive is still usable

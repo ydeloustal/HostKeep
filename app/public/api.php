@@ -277,6 +277,9 @@ try {
 
         case 'backupdl':
             require_perm($me, 'backups.download');
+            if (backup_holds_panel_secrets((string) ($_GET['db'] ?? ''), isset($_GET['archive']) ? (string) $_GET['archive'] : null, (string) ($_GET['pre'] ?? ''))) {
+                require_perm($me, 'backups.panel');
+            }
             audit('téléchargement de sauvegarde ' . ($_GET['pre'] ?? ((isset($_GET['archive']) ? ($_GET['archive'] ?: 'complète') : ($_GET['db'] ?? '')) . ' ' . ($_GET['day'] ?? ''))));
             if (isset($_GET['archive'])) {
                 backup_stream((string) ($_GET['day'] ?? ''), (string) $_GET['archive']);
@@ -296,6 +299,9 @@ try {
                 json_out(['error' => 'Action refusée.'], 400);
             }
             require_perm($me, $perm);
+            if ($verb === 'backup-restore' && ($args[1] ?? '') === 'hostkeep') {
+                require_perm($me, 'backups.panel');   // an old copy of the accounts and settings of the panel itself
+            }
             $res = start_action($verb, $args);
             json_out($res, isset($res['error']) ? 400 : 200);
 

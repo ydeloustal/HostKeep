@@ -213,7 +213,9 @@ Classement par sévérité estimée (impact × facilité). Aucune faille permett
 - **Leçon d'architecture :** la frontière de privilège ne passe pas seulement par le helper : **tout réglage lu par un processus root est une entrée non fiable**. Même remarque, à moindre impact, pour `backup.exclude` (passé à `tar`, correctement échappé), `monitor.ping_url` et `notify.webhook_url` (SSRF depuis le serveur, protocoles limités à HTTP/HTTPS, redirections refusées : correct).
 - **Correctif [Recommandation] :** liste blanche de clés rclone par backend (ou suppression du mode « Autre » au profit de types explicites : S3, SFTP, WebDAV, B2, Google Drive par jeton), refus explicite de `ssh`, `local`, `alias`, `union`, `combine`, `*_command` ; lancer rclone sous un utilisateur dédié non root avec accès en lecture seule aux sauvegardes.
 
-### S2 — Frontière Administrateur → Super Admin poreuse · **Moyenne** · [Vérifié]
+### S2 — Frontière Administrateur → Super Admin poreuse · **Moyenne** · [Vérifié] · **Corrigé (non publié)**
+> Corrigé : fichiers de Hostkeep refusés par le helper, permission `backups.panel` (Super Admin) pour la base et l'archive `hostkeep` et l'archive complète, `.env` du panel déplacé de l'archive `www` vers l'archive `hostkeep`. **Choix assumé :** les secrets *des sites* (`.env`, `wp-config.php`) restent lisibles par un Administrateur, qui peut de toute façon télécharger leurs bases et l'archive `www` ; seule la frontière avec les secrets *du panel* est protégée.
+
 - L'**explorateur de fichiers** (`files.view`, rôle Administrateur) a `/var/www` dans ses racines par défaut, donc `/var/www/hostkeep/.env`, qui contient `HOSTKEEP_APP_KEY` (seuls les noms de type clé privée sont refusés).
 - Le **téléchargement des sauvegardes** (`backups.download`, Administrateur) donne `hostkeep.sql.gz` : hachés des mots de passe, secrets TOTP chiffrés, secrets des réglages chiffrés.
 - Avec la clé, un Administrateur déchiffre les secrets TOTP des Super Admins et tous les secrets (SMTP, S3, webhooks). Il lit aussi les `.env` / `wp-config.php` de toutes les applications du serveur.
