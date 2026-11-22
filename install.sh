@@ -201,7 +201,7 @@ os_check() {
 }
 port_owner() { ss -Hltnp "sport = :$1" 2>/dev/null | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' | sort -u | head -n1; }
 svc_installed() { systemctl cat "$1.service" >/dev/null 2>&1; }
-docker_traefik() { command -v docker >/dev/null && docker ps --format '{{.Image}} {{.Names}}' 2>/dev/null | grep -qi traefik; }
+docker_traefik() { command -v docker >/dev/null && docker ps --format '{{.Image}} {{.Names}}' 2>/dev/null | grep -i traefik >/dev/null; }
 # What serves ports 80/443 today. Sets DETECTED (apache | nginx | caddy | proxy | empty) and DETECTED_WHAT (explanation).
 DETECTED=''; DETECTED_WHAT=''
 detect_web() {
@@ -229,7 +229,7 @@ row() { local pad=$(( ${2:-22} - ${#1} )); ((pad > 0)) || pad=1; printf '  %s%*s
 public_ips() { ip -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1; }
 dns_check() {   # warn (not fatal) when the domain does not resolve to this server
   local d=$1 ips mine
-  ips=$(getent ahosts "$d" 2>/dev/null | awk '{print $1}' | sort -u | xargs)
+  ips=$(getent ahosts "$d" 2>/dev/null | awk '{print $1}' | sort -u | xargs || true)
   if [[ -z $ips ]]; then warn "$d ne résout vers aucune adresse : crée l'enregistrement DNS A/AAAA avant de demander un certificat."; return 1; fi
   mine=$(public_ips | xargs)
   for ip in $ips; do [[ " $mine " == *" $ip "* ]] && { ok "DNS : $d → $ip (ce serveur)"; return 0; }; done
@@ -247,7 +247,7 @@ cmd_deps() {
   fi
   local missing=() p
   for p in "${PKGS[@]}"; do
-    if dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'ok installed'; then ok "$p"; else missing+=("$p"); echo "  ${Y}✗${N} $p (à installer)"; fi
+    if dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep 'ok installed' >/dev/null; then ok "$p"; else missing+=("$p"); echo "  ${Y}✗${N} $p (à installer)"; fi
   done
   if ((${#missing[@]})); then
     step "Installation de ${#missing[@]} paquet(s) : ${missing[*]}"
@@ -761,7 +761,8 @@ EOF
 web_caddy() {
   step "Caddy"
   if ! command -v caddy >/dev/null; then
-    if apt-cache policy caddy 2>/dev/null | grep -q 'Candidate: [0-9]'; then
+    # no « grep -q » after a pipe: it exits at the first match, the writer gets SIGPIPE and pipefail fails the test
+    if apt-cache policy caddy 2>/dev/null | grep 'Candidate: [0-9]' >/dev/null; then
       echo "  Installation de Caddy…"; apt_install_quiet caddy
     else
       die "Caddy n'est pas dans les dépôts de ce système : installe-le (https://caddyserver.com/docs/install#debian-ubuntu-raspbian) puis relance, ou choisis nginx."
@@ -770,7 +771,7 @@ web_caddy() {
   systemctl enable -q --now caddy
   local cf=/etc/caddy/Caddyfile site=/etc/caddy/hostkeep.caddy
   [[ -f $cf ]] || die "$cf introuvable."
-  if grep -rlw --exclude=hostkeep.caddy -- "$DOMAIN" /etc/caddy 2>/dev/null | head -n1 | grep -q .; then
+  if grep -rqw --exclude=hostkeep.caddy -- "$DOMAIN" /etc/caddy 2>/dev/null; then
     die "le domaine $DOMAIN apparaît déjà dans la configuration de Caddy ($(grep -rlw --exclude=hostkeep.caddy -- "$DOMAIN" /etc/caddy | head -n1))."
   fi
   keep "$cf" "$site"
@@ -977,7 +978,7 @@ preflight() {
   row "  Mémoire" 16 "$mem Mo$( ((mem < 900)) && echo " ${Y}— juste : 1 Go conseillé${N}")"
   row "  Port 80 / 443" 16 "${p80:-libre} / ${p443:-libre}"
   if [[ -n $DOMAIN ]] && command -v getent >/dev/null; then
-    local ips; ips=$(getent ahosts "$DOMAIN" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ')
+    local ips; ips=$(getent ahosts "$DOMAIN" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ' || true)
     row "  DNS $DOMAIN" 16 "${ips:-${Y}ne résout pas encore${N}}"
   fi
 }
@@ -1018,8 +1019,8 @@ cmd_install() {
   echo "${G}${B}  Hostkeep est installé.${N}"
   row "Adresse" 14 "$(panel_url)"; row "Service" 14 "systemctl status hostkeep"; row "Commande" 14 "sudo hostkeep help"
   if [[ -n $ADMIN_OUTPUT ]]; then echo "  ${Y}Note le mot de passe temporaire ci-dessus : il ne sera plus affiché.${N}"; fi
-  if command -v ufw >/dev/null && ufw status 2>/dev/null | grep -q 'Status: active' && [[ $WEB =~ ^(apache|nginx|caddy)$ ]]; then
-    ufw status | grep -qE '^(80|443|80,443)/tcp|Nginx|Apache|WWW' || warn "ufw est actif : ouvre les ports web si besoin (sudo ufw allow 80,443/tcp)."
+  if command -v ufw >/dev/null && ufw status 2>/dev/null | grep 'Status: active' >/dev/null && [[ $WEB =~ ^(apache|nginx|caddy)$ ]]; then
+    ufw status | grep -E '^(80|443|80,443)/tcp|Nginx|Apache|WWW' >/dev/null || warn "ufw est actif : ouvre les ports web si besoin (sudo ufw allow 80,443/tcp)."
   fi
 }
 

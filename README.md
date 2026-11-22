@@ -100,7 +100,7 @@ L'installateur détecte le système (Debian 12/13, Ubuntu 22.04/24.04), installe
 
 ## 🚀 Installation en une ligne
 
-**Il te faut :** un VPS **Debian 12 / 13** ou **Ubuntu 22.04 / 24.04** avec un accès `sudo`, et un **sous-domaine** (ex. `admin.mondomaine.fr`) dont l'enregistrement DNS `A` pointe vers le VPS (ports 80 et 443 ouverts).
+**Il te faut :** un VPS **Debian 12 / 13** ou **Ubuntu 22.04 / 24.04** (installation réelle testée sur chacun, voir [`tests/integration/`](tests/integration/README.md)) avec un accès `sudo`, et un **sous-domaine** (ex. `admin.mondomaine.fr`) dont l'enregistrement DNS `A` pointe vers le VPS (ports 80 et 443 ouverts).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ydeloustal/HostKeep/main/install.sh | sudo bash
@@ -149,7 +149,7 @@ Depuis un clone, les étapes se lancent aussi une par une : `sudo ./install.sh d
 | **Apache** | Ajoute les vhosts `hostkeep.conf` / `hostkeep-le-ssl.conf` et le journal de trafic (GlobalLog) |
 | **Caddy** | Ajoute `/etc/caddy/hostkeep.caddy` et une ligne `import` dans le Caddyfile ; HTTPS géré par Caddy |
 | **Traefik, HAProxy, Nginx Proxy Manager, conteneur…** | Mode `proxy` : le panel écoute en HTTP local (`hostkeep-http.service`) ; route Traefik écrite si le fournisseur `file` est trouvé, sinon exemples dans `/etc/hostkeep/proxy-snippets.txt` |
-| **Rien** | Propose d'installer Nginx (ou Apache, Caddy) |
+| **Rien** | Propose d'installer Nginx (ou Apache, Caddy). Caddy est dans les dépôts de Debian 13 et d'Ubuntu ; sur Debian 12, installe-le d'abord depuis [son dépôt officiel](https://caddyserver.com/docs/install#debian-ubuntu-raspbian) |
 
 Garde-fous : refus si le domaine est déjà servi par un autre site, refus de lancer un second serveur sur des ports déjà pris, `configtest` / `nginx -t` / `caddy validate` avant chaque rechargement, et **retour automatique à la configuration précédente** en cas d'erreur (y compris quand on change de mode ou de domaine). Le certificat se renouvelle tout seul (`certbot.timer`).
 
@@ -233,6 +233,7 @@ La commande est idempotente : tu peux la relancer sans risque.
 - copie l'application dans `/var/www/hostkeep` et crée le `.env` en `root:hostkeep 640` (avec une clé de chiffrement aléatoire) ;
 - crée ou met à jour la base `hostkeep` (accès par socket Unix, droits minimaux) et importe le compte unique de Hostkeep 1.x ;
 - installe le helper root `/usr/local/sbin/hostkeep-action`, la règle sudo qui n'autorise que lui et la commande `/usr/local/bin/hostkeep` ;
+- installe les corrections de l'audit et la liste des clés de signature des versions (`/usr/local/share/hostkeep/`) ;
 - installe **`hostkeep.service`** : un PHP-FPM dédié (`/etc/hostkeep/php-fpm.conf`), confiné par `open_basedir` et le sandboxing systemd, redémarré automatiquement ;
 - active la jail fail2ban `hostkeep` et les **timers systemd** de collecte (minute, 5 min, heure, nuit).
 
@@ -272,12 +273,14 @@ Chaque nuit (heure réglable), Hostkeep range dans `/var/backups/hostkeep/AAAA-M
 | Quoi | Fichier | Conservation par défaut |
 |---|---|---|
 | Chaque base MariaDB | `<base>.sql.gz` | 7 jours |
-| `/var/www`, `/etc/apache2`, `/etc/nginx`, `/etc/caddy`, `/etc/letsencrypt`, `/etc/hostkeep` (ceux qui existent) | `files/<nom>.tar.gz` (lisible par root seulement) | 3 jours |
+| `/var/www`, `/etc/apache2`, `/etc/nginx`, `/etc/caddy`, `/etc/letsencrypt`, `/etc/hostkeep` (ceux qui existent) | `files/<nom>.tar.gz` (lisible par root seulement). Le `.env` du panel est rangé dans `hostkeep`, pas dans `www` | 3 jours |
 | Ce qui a été fait, tailles, sommes SHA-256, erreurs | `manifest.json` | — |
 
 Avant d'archiver les fichiers, Hostkeep vérifie qu'il reste assez de place (et garde 1 Gio libre) : sinon il saute cette partie et lève une alerte, plutôt que de remplir le disque.
 
 **Copie hors du serveur.** Dans *Administration › Paramètres › Sauvegarde externe*, choisis une destination (S3, SFTP, ou une configuration rclone pour Google Drive, Dropbox…), une phrase de chiffrement (recommandé), puis **Tester la connexion**. Chaque jour est copié juste après la sauvegarde ; un envoi raté est retenté toutes les heures. L'accueil affiche l'heure de la dernière copie réussie, et une alerte se lève après 36 h sans copie.
+
+**Qui peut télécharger quoi.** Un Administrateur télécharge les bases et les archives des sites ; la base `hostkeep`, l'archive `hostkeep` et l'archive complète d'un jour (qui contiennent les secrets du panel) sont réservées au Super Admin.
 
 **Restaurer.**
 
@@ -331,8 +334,14 @@ Le panel a des pouvoirs d'administration : **protège-le comme un accès SSH.**
 - **Double authentification TOTP** obligatoire pour les comptes administrateurs (réglable), secret chiffré, un code ne sert qu'une fois, codes de secours hachés.
 - Blocage après 5 échecs par IP **et** par compte (réglable), puis bannissement fail2ban.
 - Mot de passe SMTP chiffré (AES-256-GCM), liens de réinitialisation à usage unique (seul leur hash est stocké).
-- Journal de toutes les actions. Explorateur de fichiers en lecture seule : clés privées et fichiers de Hostkeep (dont sa clé de chiffrement) toujours refusés.
+- Journal de toutes les actions, avec le résultat de chaque action root. La sortie d'une action n'est lisible que par son auteur ou par un compte autorisé à la lancer.
+- Explorateur de fichiers en lecture seule : clés privées et fichiers de Hostkeep (dont sa clé de chiffrement) toujours refusés.
+- Rien de ce que le panel enregistre ne peut faire exécuter une commande au collecteur root : la configuration rclone collée est limitée aux options d'identification et d'adresse.
+- Mode proxy : seule l'adresse du reverse proxy est crue pour l'IP du visiteur (`--trusted-proxy`).
+- **Mises à jour signées** dès qu'une clé est déclarée ([`docs/RELEASING.md`](docs/RELEASING.md)).
 - `.env` hors de la racine web, lisible seulement par root et le groupe `hostkeep`, ignoré par Git.
+
+Une faille ? Signale-la en privé : [`SECURITY.md`](SECURITY.md).
 
 **À faire de ton côté**
 
@@ -351,9 +360,9 @@ Le panel a des pouvoirs d'administration : **protège-le comme un accès SSH.**
 
 ## 🔄 Mise à jour
 
-**Depuis le panel :** *Sécurité › Version du panel*, bouton **Mettre à jour** (Super Admin). Dès qu'une clé de signature est déclarée dans `system/allowed_signers`, seules les versions **signées** sont installées ([`docs/RELEASING.md`](docs/RELEASING.md)). Le panel vérifie chaque heure s'il y a des nouveautés sur GitHub et l'affiche dans les alertes. Un bouton **Revenir à…** réinstalle la version précédente.
+**Depuis le panel :** *Administration › Version*, bouton **Mettre à jour** (Super Admin). Dès qu'une clé de signature est déclarée dans `system/allowed_signers`, seules les versions **signées** sont installées ([`docs/RELEASING.md`](docs/RELEASING.md)). Le panel vérifie chaque heure s'il y a des nouveautés sur GitHub et l'affiche dans les alertes. Un bouton **Revenir à…** réinstalle la version précédente.
 
-**En SSH :** `sudo hostkeep update` (ou relancer la commande d'installation en une ligne).
+**En SSH :** `sudo hostkeep update`, qui fait exactement les mêmes contrôles que le bouton (ou relancer la commande d'installation en une ligne, qui elle reprend toujours la branche `main`).
 
 Le code est remplacé ; le `.env`, la base (comptes, paramètres), les sauvegardes et la configuration du serveur web sont conservés.
 
@@ -395,9 +404,13 @@ Les autres sites ne sont pas touchés. Le certificat Let's Encrypt est conservé
 | Erreur 502 / 503 | `hostkeep.service` arrêté | `sudo hostkeep status`, `sudo hostkeep logs`, puis `sudo /opt/hostkeep/install.sh app` |
 | Alerte « Le collecteur ne remonte plus de mesures » | Timers arrêtés ou erreur de collecte | `systemctl list-timers 'hostkeep-*'` et `journalctl -u 'hostkeep-collect@*' -n 50` |
 | E-mails non reçus | SMTP mal réglé | *Administration › E-mails › Envoyer un e-mail de test* affiche l'erreur exacte du serveur |
-| Pages *Sites* et *Trafic* vides | Ni Apache ni Nginx actifs (Caddy et les reverse proxy ne sont pas lus), ou collecte pas encore passée | « Contrôler maintenant », ou `sudo hostkeep collect` |
+| Page *Sites* vide | Ni Apache, ni Nginx, ni Caddy actifs (les sites derrière un reverse proxy externe, Traefik ou conteneurs, ne sont pas lus), ou collecte pas encore passée | « Contrôler maintenant », ou `sudo hostkeep collect` |
+| Page *Trafic* vide | Le trafic n'est compté qu'avec Apache et Nginx (pas Caddy) | — |
 | Un site Nginx manque dans *Trafic* | Il a son propre `access_log` | Ajoute `include snippets/hostkeep-traffic.conf;` dans son bloc `server`, puis recharge Nginx (la page *Trafic* liste les sites concernés) |
 | « Session expirée, réessaie » à la connexion | Cookie bloqué, ou proxy qui ne transmet pas `X-Forwarded-Proto` | Ouvre l'adresse en `https://` ; vérifie la configuration du proxy |
+| Mode proxy : tous les visiteurs ont la même IP (celle du proxy), ou fail2ban bannit le proxy | L'adresse du reverse proxy n'est pas déclarée | `sudo hostkeep web proxy --trusted-proxy ADRESSE_DU_PROXY` (voir `/var/log/hostkeep/http-access.log`) |
+| Alerte « Configuration rclone refusée » | La destination « Autre » contient une option interdite depuis la 2.10.0 (elle lançait un programme ou lisait un fichier en root) | Retire l'option nommée dans l'alerte (*Administration › Paramètres › Sauvegarde externe*) |
+| Page *Version* : « non vérifiées » | Aucune clé de signature n'est déclarée | Normal tant que le mainteneur n'a pas publié de version signée ; voir [`docs/RELEASING.md`](docs/RELEASING.md) |
 
 **Où regarder :** `sudo hostkeep logs`, `/var/log/hostkeep/` (connexions, erreurs PHP), et les journaux du serveur web.
 
