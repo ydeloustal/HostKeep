@@ -131,6 +131,7 @@ curl -fsSL https://raw.githubusercontent.com/ydeloustal/HostKeep/main/install.sh
 | `--web MODE` | `auto`, `apache`, `nginx`, `caddy`, `proxy`, `none` | `auto` |
 | `--https yes\|no` | Certificat Let's Encrypt + redirection | `yes` |
 | `--listen ADDR` | Mode `proxy` : adresse HTTP locale du panel | `127.0.0.1:8090` |
+| `--trusted-proxy L` | Mode `proxy` : adresses ou réseaux du reverse proxy, seuls crus pour l'IP du visiteur (`X-Forwarded-For`) | `127.0.0.1 ::1` en écoute locale, réseaux Docker sur `docker0` |
 | `--admin-user U`, `--admin-email E` | Premier Super Admin (mot de passe généré, affiché une fois) | `admin` |
 | `--harden-apache` | Active aussi les règles Apache globales (bloque `.env`, `.git`, dumps… sur **tous** les sites) | non |
 | `--repo URL`, `--branch B`, `--dir D` | Source du code | GitHub, `main`, `/opt/hostkeep` |
@@ -181,6 +182,7 @@ Les comptes se gèrent dans **Administration › Utilisateurs** (ou en ligne de 
 | Fichiers, téléchargement des sauvegardes, journal des actions | | | ✔ | ✔ |
 | Comptes de rang inférieur, paramètres généraux / SMTP / alertes / sauvegardes | | | ✔ | ✔ |
 | Comptes administrateurs, paramètres de sécurité, mise à jour du panel, domaine | | | | ✔ |
+| Sauvegardes contenant les secrets du panel (base et archive `hostkeep`, archive complète d'un jour) | | | | ✔ |
 
 - **Création** : mot de passe temporaire généré (affiché une fois, à changer à la première connexion), invitation par e-mail (lien valable 72 h), ou mot de passe choisi.
 - **Connexion** par identifiant ou e-mail ; **mot de passe oublié** par e-mail si le SMTP est configuré.
@@ -213,7 +215,7 @@ sudo hostkeep passwd bob [--generate]   # nouveau mot de passe (ferme ses sessio
 sudo hostkeep unlock bob                # débloque un compte après des échecs
 sudo hostkeep 2fa-reset bob             # retire la double authentification (téléphone perdu)
 sudo hostkeep web [mode] [--domain D]   # reconfigure la publication
-sudo hostkeep update                    # git pull + réinstallation
+sudo hostkeep update                    # dernière version (signée si une clé est configurée) + réinstallation
 sudo hostkeep backup                    # sauvegarde maintenant (bases + fichiers + copie externe)
 sudo hostkeep restore list              # jours sauvegardés sur ce serveur
 sudo hostkeep restore fetch [jour]      # jours de la copie externe, ou en rapatrie un ici
@@ -329,7 +331,7 @@ Le panel a des pouvoirs d'administration : **protège-le comme un accès SSH.**
 - **Double authentification TOTP** obligatoire pour les comptes administrateurs (réglable), secret chiffré, un code ne sert qu'une fois, codes de secours hachés.
 - Blocage après 5 échecs par IP **et** par compte (réglable), puis bannissement fail2ban.
 - Mot de passe SMTP chiffré (AES-256-GCM), liens de réinitialisation à usage unique (seul leur hash est stocké).
-- Journal de toutes les actions. Explorateur de fichiers en lecture seule, clés privées toujours refusées.
+- Journal de toutes les actions. Explorateur de fichiers en lecture seule : clés privées et fichiers de Hostkeep (dont sa clé de chiffrement) toujours refusés.
 - `.env` hors de la racine web, lisible seulement par root et le groupe `hostkeep`, ignoré par Git.
 
 **À faire de ton côté**
@@ -349,7 +351,7 @@ Le panel a des pouvoirs d'administration : **protège-le comme un accès SSH.**
 
 ## 🔄 Mise à jour
 
-**Depuis le panel :** *Sécurité › Version du panel*, bouton **Mettre à jour** (Super Admin). Le panel vérifie chaque heure s'il y a des nouveautés sur GitHub et l'affiche dans les alertes. Un bouton **Revenir à…** réinstalle la version précédente.
+**Depuis le panel :** *Sécurité › Version du panel*, bouton **Mettre à jour** (Super Admin). Dès qu'une clé de signature est déclarée dans `system/allowed_signers`, seules les versions **signées** sont installées ([`docs/RELEASING.md`](docs/RELEASING.md)). Le panel vérifie chaque heure s'il y a des nouveautés sur GitHub et l'affiche dans les alertes. Un bouton **Revenir à…** réinstalle la version précédente.
 
 **En SSH :** `sudo hostkeep update` (ou relancer la commande d'installation en une ligne).
 
@@ -415,7 +417,10 @@ system/
   hardening/      corrections de l'audit : en-têtes, fichiers sensibles, version (Apache, Nginx, bloc Caddy)
   systemd/        service, timers de collecte, de sauvegarde et d'audit
   …               sudoers, PHP-FPM dédié, fail2ban, logrotate, MariaDB, Apache
-docs/             RESTORE.md (notice de l'archive de migration), captures d'écran, maquettes
+docs/             RESTORE.md (notice de l'archive de migration), RELEASING.md (versions signées), strategy/ (audit, feuille de route),
+                  captures d'écran, maquettes
+tests/            php/ (règles PHP) et helper/ (helper root), lancés par le CI
+tools/            mock.py : serveur de démo de l'interface, sans PHP ni base (voir CONTRIBUTING.md)
 install.sh        installateur (une ligne, deps, app, web, admin, status, uninstall)
 .env.example      configuration du serveur, commentée
 ```

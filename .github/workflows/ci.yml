@@ -1,5 +1,5 @@
-# Checks run on every push and pull request. The "Mettre à jour" button of the panel installs
-# the tracked branch as root: protect it on GitHub so only commits that pass these checks reach it.
+# Checks run on every push and pull request. The "Mettre à jour" button of the panel installs code as root:
+# protect main on GitHub so only commits that pass these checks reach it, and sign the release tags (docs/RELEASING.md).
 name: CI
 
 on:
@@ -16,19 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: PHP — syntaxe (8.2 et la version du runner)
-        run: |
-          php -v | head -1
-          find app -name '*.php' -print0 | xargs -0 -n1 php -l
-          docker run --rm -v "$PWD:/src" -w /src php:8.2-cli sh -c "find app -name '*.php' -print0 | xargs -0 -n1 php -l"
-
-      - name: PHP — tests (8.1 et la version du runner)
-        run: |
-          for t in tests/php/*_test.php; do php "$t"; done
-          docker run --rm -v "$PWD:/src" -w /src php:8.1-cli sh -c 'for t in tests/php/*_test.php; do php "$t" || exit 1; done'
-
       - name: Shell — shellcheck
-        run: shellcheck -S warning install.sh system/hostkeep-action system/hostkeep-cli system/restore.sh
+        run: shellcheck -S warning install.sh system/hostkeep-action system/hostkeep-cli system/restore.sh tests/helper/*.sh
+
+      - name: Helper root — tests
+        run: for t in tests/helper/*_test.sh; do bash "$t"; done
 
       - name: JavaScript — syntaxe
         run: for f in $(git ls-files 'app/public/*.js'); do node --check "$f"; done
@@ -38,6 +30,33 @@ jobs:
 
       - name: sudoers — syntaxe
         run: sudo visudo -cf system/sudoers-hostkeep
+
+  php:
+    # Every PHP version of the supported distributions: 8.1 (Ubuntu 22.04), 8.2 (Debian 12), 8.3 (Ubuntu 24.04), 8.4 (Debian 13)
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.2', '8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntaxe et tests
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src php:${{ matrix.php }}-cli sh -c '
+            php -v | head -1
+            find app tests -name "*.php" -print0 | xargs -0 -n1 php -l >/dev/null || exit 1
+            for t in tests/php/*_test.php; do php "$t" || exit 1; done'
+
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Aucun secret dans l'historique
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.21.2 detect --source=/repo --redact -v
 
   schema:
     name: Schéma MariaDB

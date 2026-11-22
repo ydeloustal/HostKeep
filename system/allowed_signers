@@ -1,0 +1,7 @@
+# Hostkeep — public keys allowed to sign the release tags (format « allowed signers » of ssh-keygen, see
+# docs/RELEASING.md). One line per key:
+#
+#   yoan@hostkeep namespaces="git" ssh-ed25519 AAAAC3Nza…
+#
+# While this file has no key, « Mettre à jour » follows the branch without checking who wrote it (and says so).
+# As soon as one key is here, it only installs a release tag (vX.Y.Z) signed by one of these keys.
