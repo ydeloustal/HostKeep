@@ -266,6 +266,9 @@ Liste blanche + revalidation root · aucun shell côté web · DB par socket san
 | **B5** | Faible | Métriques : un seul système de fichiers (`/`) et le réseau total ; une partition `/var` pleine n'apparaît pas dans l'historique ni dans la prévision. | `c_metrics`, `disk_forecast` |
 | **B6** | Faible | README annonce PHP 8.1+ (Ubuntu 22.04), mais le CI ne vérifie que 8.2 et la version du runner. | `.github/workflows/ci.yml` |
 | **B7** | Faible | Permissions dupliquées dans `app.js` (`VERB_PERMS`) : une divergence masquerait ou afficherait des boutons à tort (sans risque de sécurité, le serveur revérifie). | `app/public/assets/app.js:10` |
+| **B9** ✅ corrigé en 2.10.1 | Moyenne | Installateur : `getent` échoue quand le domaine ne résout pas encore ; avec `set -e` + `pipefail`, l'installation s'arrêtait **sans message** après le récapitulatif. Trouvé par l'installation réelle. | `install.sh` (`preflight`, `dns_check`) |
+| **B10** ✅ corrigé en 2.10.1 | Moyenne | `cmd \| grep -q` sous `pipefail` : `grep -q` quitte au premier résultat, `cmd` reçoit SIGPIPE (141), le test échoue. Caddy n'était **jamais** installé automatiquement, un conflit de domaine Caddy pouvait passer inaperçu, et la restauration pouvait refuser une base existante. | `install.sh`, helper, CLI ; garde-fou `tests/helper/pipefail_test.sh` |
+| **B11** | Info | Lecture des sorties de tâches par l'auteur : l'auteur est reconnu par son identifiant ; un compte supprimé puis recréé avec le même identifiant lirait les anciennes tâches de l'autre (7 jours au plus). | `app/src/actions.php` (`job_readable`) |
 | **B8** | Info | Nommage incohérent « Hostkeep » (code, README) / « HostKeep » (dépôt). | — |
 
 ---

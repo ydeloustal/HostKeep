@@ -8,7 +8,7 @@
 #   sudo hostkeep passwd bob             new password (--generate for a temporary one)
 #   sudo hostkeep unlock bob             unlock an account after failed logins
 #   sudo hostkeep 2fa-reset bob          remove the two-factor authentication (lost phone and recovery codes)
-#   sudo hostkeep web [apache|nginx|caddy|proxy|none] [--domain D] [--https yes|no]
+#   sudo hostkeep web [apache|nginx|caddy|proxy|none] [--domain D] [--https yes|no] [--trusted-proxy L]
 #   sudo hostkeep update                 install the newest version (signed tag when a key is configured), same as the panel's button
 #   sudo hostkeep collect [mode]         run the collector now
 #   sudo hostkeep backup                 back up now (databases + files, then the off-site copy)
@@ -45,7 +45,7 @@ restore() {
         echo "Sauvegarde introuvable : $f (voir « hostkeep restore list »)" >&2; exit 1
       fi
       [[ $item != mysql ]] || { echo "La base système « mysql » ne se restaure pas ainsi." >&2; exit 1; }
-      if mysql -N -e 'SHOW DATABASES' | grep -qx -- "$item"; then
+      if mysql -N -e 'SHOW DATABASES' | grep -x -- "$item" >/dev/null; then
         if [[ ${4:-} != --yes ]]; then
           read -r -p "Remplacer le contenu actuel de la base « $item » par celui du $day ? Tape « restaurer » : " a
           [[ $a == restaurer ]] || { echo "Annulé."; exit 1; }
