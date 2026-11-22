@@ -21,6 +21,9 @@
 #                      proxy (Traefik, HAProxy, Nginx Proxy Manager… in front), none (configure it yourself)
 #   --https yes|no     Let's Encrypt certificate + redirect to HTTPS (default yes)
 #   --listen ADDR      proxy mode: local HTTP address of the panel (default 127.0.0.1:8090)
+#   --trusted-proxy L  proxy mode: addresses / networks of the reverse proxy, the only ones whose X-Forwarded-For
+#                      is believed (default: 127.0.0.1 ::1 when listening on loopback, the Docker networks
+#                      when listening on docker0)
 #   --admin-user U     first Super Admin (default admin); --admin-email E; password generated, shown once
 #   --harden-apache    also enable the server-wide Apache rules (deny .env, .git, dumps… on EVERY site)
 #   --repo URL --branch B --dir D   source of the one-line install (default: GitHub, main, /opt/hostkeep)
@@ -48,7 +51,7 @@ warn() { echo "  ${Y}!${N} $*" >&2; }
 die() { echo "${R}Erreur :${N} $*" >&2; exit 1; }
 
 # ---------- options ----------
-CMD=''; DOMAIN=''; EMAIL=''; WEB=''; HTTPS=''; LISTEN=''; ADMIN_USER=''; ADMIN_EMAIL=''; HARDEN=0; YES=0; PURGE=0
+CMD=''; DOMAIN=''; EMAIL=''; WEB=''; HTTPS=''; LISTEN=''; TRUSTED=''; ADMIN_USER=''; ADMIN_EMAIL=''; HARDEN=0; YES=0; PURGE=0
 ARGS=("$@")
 parse_args() {
   while (($#)); do
@@ -58,6 +61,7 @@ parse_args() {
       --web) WEB=${2:-}; shift ;;  --web=*) WEB=${1#*=} ;;
       --https) HTTPS=${2:-}; shift ;;  --https=*) HTTPS=${1#*=} ;;
       --listen) LISTEN=${2:-}; shift ;;  --listen=*) LISTEN=${1#*=} ;;
+      --trusted-proxy) TRUSTED=${2:-}; shift ;;  --trusted-proxy=*) TRUSTED=${1#*=} ;;
       --admin-user) ADMIN_USER=${2:-}; shift ;;  --admin-user=*) ADMIN_USER=${1#*=} ;;
       --admin-email) ADMIN_EMAIL=${2:-}; shift ;;  --admin-email=*) ADMIN_EMAIL=${1#*=} ;;
       --repo) REPO=${2:-}; shift ;;  --repo=*) REPO=${1#*=} ;;
@@ -81,11 +85,18 @@ parse_args() {
   [[ -z $WEB || $WEB =~ ^(auto|apache|nginx|caddy|proxy|none)$ ]] || die "--web : auto, apache, nginx, caddy, proxy ou none"
   [[ -z $HTTPS || $HTTPS =~ ^(yes|no)$ ]] || die "--https : yes ou no"
   [[ -z $LISTEN ]] || valid_listen "$LISTEN" || die "--listen : adresse:port, ex. 127.0.0.1:8090"
+  TRUSTED=${TRUSTED//,/ }
+  [[ -z $TRUSTED ]] || valid_trusted "$TRUSTED" || die "--trusted-proxy : adresses IP ou réseaux CIDR séparés par des espaces, ex. 172.18.0.5 ou 10.0.0.0/24"
   return 0
 }
 valid_domain() { [[ ${#1} -le 253 && $1 =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ && $1 != *example.com ]]; }
 valid_email() { [[ ${#1} -le 190 && $1 =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; }
 valid_username() { [[ $1 =~ ^[A-Za-z0-9_.-]{3,40}$ ]]; }
+valid_trusted() {   # "IP or CIDR" list, space separated
+  local t
+  for t in $1; do [[ $t =~ ^([0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?|[0-9a-fA-F:]+(/[0-9]{1,3})?)$ && $t == *[.:]* ]] || return 1; done
+  [[ -n ${1// /} ]]
+}
 valid_listen() { [[ $1 =~ ^(\[[0-9a-fA-F:]+\]|[0-9]{1,3}(\.[0-9]{1,3}){3}|localhost):[0-9]{2,5}$ ]]; }
 
 # ---------- questions (read from the terminal, even when the script comes from « curl | bash ») ----------
@@ -795,7 +806,23 @@ web_proxy() {
   if docker_traefik && [[ -n $docker_gw ]]; then def="$docker_gw:8090"; echo "  Traefik tourne dans Docker : le panel écoutera sur la passerelle docker0 ($docker_gw), joignable depuis les conteneurs."; fi
   LISTEN=${LISTEN:-$(env_get HOSTKEEP_HTTP_LISTEN "$def")}
   has_tty && ask LISTEN "Adresse HTTP locale du panel (le proxy y envoie les requêtes)" "$LISTEN" valid_listen
-  local port=${LISTEN##*:} own
+  local port=${LISTEN##*:} own host=${LISTEN%:*} trusted
+  # Whose X-Forwarded-For to believe: only the proxy's. Anyone else could fake their address (IP allow-list,
+  # login throttling, fail2ban bans of someone else's address).
+  case $host in
+    127.*|localhost|'[::1]') trusted='127.0.0.1 ::1' ;;
+    *) if [[ -n $docker_gw && $host == "$docker_gw" ]]; then trusted='172.16.0.0/12'; else trusted=''; fi ;;
+  esac
+  TRUSTED=${TRUSTED:-$(env_get HOSTKEEP_TRUSTED_PROXIES "$trusted")}
+  has_tty && ask TRUSTED "Adresses ou réseaux du reverse proxy (seuls autorisés à indiquer l'IP du visiteur)" "$TRUSTED"
+  TRUSTED=${TRUSTED//,/ }
+  if [[ -z $TRUSTED ]]; then
+    warn "Adresse du reverse proxy inconnue : les réseaux privés (10/8, 172.16/12, 192.168/16) sont crus, ce qui permet à une machine de ces réseaux de se faire passer pour une autre. Précise-la avec --trusted-proxy."
+    TRUSTED='10.0.0.0/8 172.16.0.0/12 192.168.0.0/16'
+  fi
+  valid_trusted "$TRUSTED" || die "--trusted-proxy invalide : $TRUSTED"
+  local real_ip='' t
+  for t in 127.0.0.1 ::1 $TRUSTED; do [[ $real_ip == *" $t;"* ]] || real_ip+="    set_real_ip_from $t;"$'\n'; done
   own=$(port_owner "$port")
   [[ -z $own || $own == nginx ]] || die "le port $port est déjà utilisé par « $own » : choisis une autre adresse avec --listen."
   if ! command -v nginx >/dev/null; then
@@ -819,13 +846,8 @@ http {
     default_type application/octet-stream;
     sendfile on;
     access_log /var/log/hostkeep/http-access.log;
-    # The real client address comes from the proxy (trusted: loopback and private networks only).
-    set_real_ip_from 127.0.0.0/8;
-    set_real_ip_from ::1;
-    set_real_ip_from 10.0.0.0/8;
-    set_real_ip_from 172.16.0.0/12;
-    set_real_ip_from 192.168.0.0/16;
-    real_ip_header X-Forwarded-For;
+    # The real client address comes from the proxy: only these addresses are believed (--trusted-proxy).
+${real_ip}    real_ip_header X-Forwarded-For;
     real_ip_recursive on;
     map \$http_x_forwarded_proto \$hk_https { default ""; https on; }
     server {
@@ -841,6 +863,7 @@ EOF
   systemctl enable -q hostkeep-http
   systemctl restart hostkeep-http || web_fail "hostkeep-http ne démarre pas (journalctl -u hostkeep-http)."
   env_set HOSTKEEP_HTTP_LISTEN "$LISTEN"
+  env_set HOSTKEEP_TRUSTED_PROXIES "$TRUSTED"
   [[ -n $HTTPS ]] || HTTPS=yes
   ok "panel servi en HTTP sur ${B}http://$LISTEN${N} (hostkeep-http.service)"
   proxy_snippets

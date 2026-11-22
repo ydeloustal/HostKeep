@@ -131,6 +131,7 @@ curl -fsSL https://raw.githubusercontent.com/ydeloustal/HostKeep/main/install.sh
 | `--web MODE` | `auto`, `apache`, `nginx`, `caddy`, `proxy`, `none` | `auto` |
 | `--https yes\|no` | Certificat Let's Encrypt + redirection | `yes` |
 | `--listen ADDR` | Mode `proxy` : adresse HTTP locale du panel | `127.0.0.1:8090` |
+| `--trusted-proxy L` | Mode `proxy` : adresses ou réseaux du reverse proxy, seuls crus pour l'IP du visiteur (`X-Forwarded-For`) | `127.0.0.1 ::1` en écoute locale, réseaux Docker sur `docker0` |
 | `--admin-user U`, `--admin-email E` | Premier Super Admin (mot de passe généré, affiché une fois) | `admin` |
 | `--harden-apache` | Active aussi les règles Apache globales (bloque `.env`, `.git`, dumps… sur **tous** les sites) | non |
 | `--repo URL`, `--branch B`, `--dir D` | Source du code | GitHub, `main`, `/opt/hostkeep` |
