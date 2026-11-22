@@ -362,8 +362,6 @@ function c_perf(): void
             $g = 'MariaDB';
         } elseif ($comm === 'node' || str_contains($args, 'PM2')) {
             $g = 'Node / PM2';
-        } elseif (str_contains($args, '.claude/remote')) {
-            $g = 'Claude (accès distant)';
         } else {
             $g = $comm;
         }

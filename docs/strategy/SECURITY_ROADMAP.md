@@ -30,17 +30,18 @@
 
 ---
 
-## 2. Correctifs immédiats (P0, version 2.10)
+## 2. Correctifs immédiats (Phase 0) — livrés en 2.10.0 et 2.10.1
 
 | ID | Correctif | Critère de validation |
 |---|---|---|
 | S1 | **Fait en 2.10.0.** Destination « Autre » rclone : **liste blanche de clés** par backend (`type`, `provider`, `endpoint`, `region`, `access_key_id`, `secret_access_key`, `host`, `user`, `port`, `key_pem`, `pass`, `token`, `client_id`, `client_secret`, `root_folder_id`, `scope`, `drive_id`, `url`, `vendor`, `account`, `key`…), refus explicite de `type = local|alias|union|combine|chunker` et de toute clé `ssh`, `*command*`, `*_exec`. rclone lancé avec `--config` en lecture seule. **Étape suivante :** rclone sous un utilisateur dédié non root. | Test unitaire : chaque clé interdite est refusée à l'enregistrement **et** ignorée à l'écriture de `rclone.conf` |
 | S2 | **Fait en 2.10.0.** Explorateur : fichiers de Hostkeep toujours refusés par le helper. Permission `backups.panel` (Super Admin) pour la base et l'archive `hostkeep` et l'archive complète d'un jour ; `.env` du panel déplacé de l'archive `www` vers l'archive `hostkeep`. Les secrets des sites restent accessibles aux Administrateurs (ils ont déjà leurs bases et l'archive `www`). | `tests/helper/fs_rules_test.sh`, `tests/php/rbac_test.php` |
-| S3 | **Fait en 2.10.0, actif quand la clé du mainteneur est déclarée.** Releases signées (minisign) sur tags ; `self-update` vérifie la signature avec la clé publique embarquée ; refus d'une branche non taguée sauf mode « développeur » explicite. | Une release au contenu modifié est refusée |
-| S4 | **Fait en 2.10.0.** Jobs : auteur enregistré, lecture réservée à l'auteur et aux rôles ayant la permission de l'action ; identifiants UUID v4. | Un Lecteur reçoit 403 sur la sortie d'une tâche Administrateur |
-| S5 | **Fait en 2.10.0.** Mode proxy : `set_real_ip_from` limité à l'adresse du proxy détecté (option `--trusted-proxy`). | Un en-tête `X-Forwarded-For` venant d'une autre IP est ignoré |
-| B1 | **Fait en 2.10.0.** Le résultat d'un job est écrit par le helper (fichier `rc`) **et** réconcilié par le collecteur en fin de cycle. | Aucune ligne d'audit avec `rc NULL` après 10 min |
+| S3 | **Mécanisme livré en 2.10.0, inactif tant que le mainteneur n'a pas déclaré sa clé.** Tags de version **signés en SSH** (`git tag -s`, `gpg.format=ssh`), vérifiés par `git verify-tag` avec `system/allowed_signers` *de la version installée* ; dès qu'une clé est déclarée, seul le plus récent tag `vX.Y.Z` signé est installé (bouton et `sudo hostkeep update`). Choix fait à la place de minisign : aucune dépendance de plus, outil déjà présent sur tous les serveurs. Les archives signées (D-11) restent à faire pour quitter `git` sur les serveurs. | Une release au contenu modifié est refusée |
+| S4 | **Fait en 2.10.0.** Jobs : auteur enregistré, lecture réservée à l'auteur et aux rôles ayant la permission de l'action ; identifiants `<horodatage>-<16 caractères hexadécimaux aléatoires>` (64 bits d'aléa). | Un Lecteur reçoit 403 sur la sortie d'une tâche Administrateur |
+| S5 | **Fait en 2.10.0.** Mode proxy : `set_real_ip_from` limité aux adresses déclarées (`--trusted-proxy`), par défaut la boucle locale ou les réseaux Docker selon l'adresse d'écoute ; réseaux privés seulement en dernier recours, avec avertissement. | Un en-tête `X-Forwarded-For` venant d'une autre IP est ignoré |
+| B1 | **Fait en 2.10.0.** Le helper écrit le résultat (fichier `.rc`) ; le collecteur le recopie chaque minute dans le journal (et inscrit -1 sans résultat après 24 h). | Aucune ligne d'audit avec `rc NULL` après 10 min |
 | B2 | **Fait en 2.10.0.** Clé d'alerte stable (`type:ressource`) indépendante du texte. | Une alerte RAM qui varie de 7 % à 6 % n'envoie aucune nouvelle notification |
+| B9, B10 | **Fait en 2.10.1.** Installateur : plus d'arrêt muet sans DNS ; plus de `\| grep -q` sous `pipefail` (garde-fou en test). | Installation réelle sur Debian 12/13, Ubuntu 22.04/24.04 |
 | — | **Fait.** `SECURITY.md` : contact, délai de réponse (72 h), politique de divulgation coordonnée (90 j), versions supportées. | Fichier publié |
 
 ---
@@ -168,7 +169,7 @@ Chaque opération du catalogue porte un niveau de risque qui fixe ses garde-fous
 | **Test d'installation** en conteneur systemd / VM : services non root, permissions de fichiers, `systemd-analyze security` | Installation | Oui | 1 |
 | **gitleaks** | Dépôt | Oui | 0 |
 | **CodeQL** (JS, Go) | Front, agent | Oui (High) | 1–2 |
-| **Audit externe** par un tiers indépendant | Tout | — | Avant 4.0 |
+| **Audit externe** par un tiers indépendant | Tout | — | Avant la 3.2, puis avant la 4.0 |
 
 **Objectifs mesurables :** 0 constat High ouvert à chaque release ; correctif d'une faille critique publié en ≤ 7 jours ; 100 % des opérations du catalogue couvertes par des tests de validation (valide/invalide) ; 100 % des routes couvertes par la matrice RBAC.
 
@@ -178,7 +179,8 @@ Chaque opération du catalogue porte un niveau de risque qui fixe ses garde-fous
 
 | Phase | Sécurité livrée |
 |---|---|
-| **0 — 2.10** | S1–S5, B1, B2, `SECURITY.md`, gitleaks, bats sur le helper, matrice PHP 8.1–8.4, protection de branche |
-| **1 — 3.0** | Catalogue d'opérations avec niveaux de risque, aperçu, confirmations ; audit chaîné (S6) ; dumps via helper (S7) ; secrets par enveloppe ; passkeys ; ré-authentification ; PHPStan, Semgrep, PHPUnit, ZAP ; SBOM |
-| **2 — 3.1/3.2** | Agent mTLS + requêtes signées + politique locale ; PHP sans sudo (`NoNewPrivileges`) ; fuzzing ; builds reproductibles |
-| **3+** | Organisations + tests d'accès croisé ; jetons d'API à portée ; quatre yeux ; extensions signées ; audit externe |
+| **0 — 2.10.0 / 2.10.1** ✅ | S1, S2, S4, S5, B1, B2, B9, B10, mécanisme S3, `SECURITY.md`, gitleaks, tests du helper (bash), matrice PHP 8.1–8.4, tests d'intégration et d'attaque. **Restent du ressort du mainteneur :** clé de signature, protection de `main`, signalement privé |
+| **Report de la Phase 0 vers la Phase 1** | rclone sous un utilisateur non root ; S7 ; S8 (`base_url`, échecs 2FA par compte) ; tests d'intégration dans le CI |
+| **1 — 3.0** | Catalogue d'opérations avec niveaux de risque, aperçu, confirmations ; audit chaîné (S6) ; dumps via helper (S7) ; rclone non root ; S8 ; tests d'accès croisé ; archives signées vérifiées à l'installation ; secrets par enveloppe ; passkeys ; ré-authentification ; PHPStan, Semgrep, PHPUnit, ZAP ; SBOM |
+| **2 — 3.1/3.2** | Agent mTLS + requêtes signées + politique locale ; PHP sans sudo (`NoNewPrivileges`) ; jetons d'API à portée (D-22) ; fuzzing ; builds reproductibles ; **audit externe avant la publication de la 3.2** |
+| **3+** | Interface des organisations (tests d'accès croisé en place depuis la Phase 1) ; quatre yeux ; extensions signées ; second audit externe avant la 4.0 |

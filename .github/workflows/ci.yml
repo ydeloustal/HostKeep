@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Shell — shellcheck
-        run: shellcheck -S warning install.sh system/hostkeep-action system/hostkeep-cli system/restore.sh tests/helper/*.sh tests/integration/*.sh
+        run: shellcheck -S warning install.sh system/hostkeep-action system/hostkeep-cli system/restore.sh tests/helper/*.sh tests/integration/*.sh tools/*.sh tools/git-hooks/*
 
       - name: Helper root — tests
         run: for t in tests/helper/*_test.sh; do bash "$t"; done
@@ -57,6 +57,24 @@ jobs:
           fetch-depth: 0
       - name: Aucun secret dans l'historique
         run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.21.2 detect --source=/repo --redact -v
+
+  attribution:
+    # No tool-generated attribution (AI co-author trailers, "Generated with …" footers) in new commits or in files.
+    name: Attribution
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fichiers suivis
+        run: tools/check-attribution.sh --files
+      - name: Messages des nouveaux commits
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [[ -z $BASE || $BASE =~ ^0+$ ]] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE="$HEAD~1"; fi
+          tools/check-attribution.sh --range "$BASE..$HEAD"
 
   schema:
     name: Schéma MariaDB

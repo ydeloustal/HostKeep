@@ -2,6 +2,8 @@
 
 > Ordre de réalisation proposé, justifié par les dépendances techniques. Les durées sont des **ordres de grandeur pour un développeur à temps plein** ; elles servent à comparer les phases, pas à promettre des dates.
 > Références : écarts dans `FEATURE_GAP_ANALYSIS.md`, architecture dans `TARGET_ARCHITECTURE.md`, sécurité dans `SECURITY_ROADMAP.md`.
+>
+> **Mis à jour pour la 2.10.1** : la Phase 0 est livrée. Les phases 1, 2 et 6 intègrent les exigences d'un **produit public distribué à grande échelle** (`TARGET_ARCHITECTURE.md` §15, décisions D-17 à D-22) ; ces ajouts sont marqués 🌍.
 
 ---
 
@@ -21,18 +23,20 @@ L'exemple proposait « consolidation → infrastructure (multi-serveurs) → hé
 
 | Phase | Nom | Version | Durée indicative | Résultat principal |
 |---|---|---|---|---|
-| 0 | Sécurisation immédiate | 2.10 | 2–3 semaines | Failles corrigées, premiers tests, releases signées |
-| 1 | Fondations | 3.0 | 6–8 semaines | Même périmètre, base saine : catalogue d'opérations, jobs, migrations, API v1, i18n, passkeys |
-| 2 | Agent et multi-serveurs | 3.1 → 3.2 | 8–10 semaines | Agent local puis distants, vue flotte |
+| 0 ✅ | Sécurisation immédiate | 2.10.0 / 2.10.1 | livrée le 22/11/2026 | Failles corrigées, socle de tests, mécanisme de releases signées |
+| 1 | Fondations | 2.11 → 3.0 | 13–18 semaines (plan détaillé : `PHASE_1_PLAN.md`) | Même périmètre, base saine : catalogue d'opérations, jobs, migrations, API v1, i18n FR/EN, passkeys, archives signées, documentation publique |
+| 2 | Agent et multi-serveurs | 3.1 → 3.2 | 10–12 semaines | Agent local puis distants, vue flotte, API publique (lecture et opérations courantes), dépôt APT, image Docker du central, audit externe |
 | 3 | Administration de l'hôte | 3.3 | 6–8 semaines | Pare-feu, SSH, utilisateurs, services, tâches planifiées, mises à jour avancées |
 | 4 | Hébergement, conteneurs, bases | 3.4 → 3.6 | 12–16 semaines | Création de sites, PHP par site, Docker/Compose, déploiement Git, bases, fichiers en écriture, sauvegardes restic |
 | 5 | Supervision avancée | 3.7 | 6–8 semaines | Alertes configurables, incidents, Web Push, rapports, comparaison |
-| 6 | Administration professionnelle | 4.0 | 8–10 semaines | Organisations, équipes, rôles personnalisés, jetons d'API publics, extensions (niveau 1–2) |
+| 6 | Administration professionnelle | 4.0 | 8–10 semaines | Interface des organisations et équipes, rôles personnalisés, API publique complète, extensions (niveau 1–2) |
 | 7 | Automatisation et IA | 4.x | 8+ semaines | Workflows, remédiation, extension IA |
 
 ---
 
-## Phase 0 — Sécurisation immédiate (2.10)
+## Phase 0 — Sécurisation immédiate (2.10) ✅ livrée
+
+> **Bilan :** livrée en 2.10.0 et 2.10.1. Fait : S1, S2, S4, S5, B1, B2, mécanisme S3, B9 et B10 (trouvés en installant pour de vrai), `SECURITY.md`, `CONTRIBUTING.md`, CI PHP 8.1–8.4, gitleaks, tests PHP et helper, tests d'intégration et d'attaque. **Écarts avec le plan :** tests du helper en bash plutôt qu'en bats ; PHPUnit remplacé par de petits scripts PHP (PHPUnit arrive en Phase 1 avec Composer, D-05) ; signature par tags SSH plutôt qu'archives minisign ; mesures de référence non faites (besoin d'un vrai VPS). **Reporté en Phase 1 :** rclone non root, S7, S8, tests d'intégration dans le CI. **Actions du mainteneur restantes :** clé de signature, protection de `main`, signalement privé (`MASTER_PLAN.md` §7).
 
 **Fonctionnalités / travaux**
 - Correctifs S1 à S5, B1, B2 (voir `SECURITY_ROADMAP.md` §2).
@@ -52,10 +56,16 @@ L'exemple proposait « consolidation → infrastructure (multi-serveurs) → hé
 
 ---
 
-## Phase 1 — Fondations (3.0)
+## Phase 1 — Fondations (2.11 → 3.0)
+
+> Plan détaillé, tâche par tâche, avec dépendances, compatibilité, tests et risques : [`PHASE_1_PLAN.md`](PHASE_1_PLAN.md).
 
 **Fonctionnalités / travaux**
 - **Migrations versionnées** (`bin/migrate`, `schema_migrations`) ; colonnes préparatoires `org_id` / `server_id` avec valeurs par défaut.
+- 🌍 **Modèle multi-organisations dès maintenant** : organisation « Default », `role_bindings` à portée, réglages à trois niveaux (instance, organisation, serveur) ; **tests d'accès croisé** générés pour chaque route, même si l'interface des organisations n'arrive qu'en Phase 6.
+- 🌍 **Distribution** : archives de version signées ; l'installateur en une ligne et la mise à jour vérifient la signature **avant** d'exécuter quoi que ce soit (D-11).
+- 🌍 **Langue et documentation** : code, API et doc de référence en anglais, interface et doc utilisateur en français **et** anglais (D-18) ; site de documentation versionné (installation, guides débutants, référence) ; politique de versions et de support publiée (D-19) ; DCO, code de conduite, modèles de tickets (D-20).
+- **Reports de la Phase 0** : rclone sous un utilisateur non root ; S7 (dumps via le helper) ; S8 (`base_url` sans repli `HTTP_HOST`, échecs 2FA comptés par compte) ; B11 ; tests d'intégration (`tests/integration/`) dans le CI.
 - **Restructuration PHP** : autoload PSR-4, routeur + middlewares, contrôleurs par module ; `api.php` conservé comme façade de compatibilité le temps de la transition.
 - **Catalogue d'opérations** : les 21 verbes actuels décrits une fois (paramètres, permission, risque, confirmation, aperçu) ; génération des validations PHP et de la liste blanche du front ; le helper Bash reste l'exécuteur.
 - **Jobs en base** (`jobs`, `job_logs`) + **worker** systemd ; centre de tâches persistant dans l'interface (UI-13).
@@ -93,6 +103,10 @@ L'exemple proposait « consolidation → infrastructure (multi-serveurs) → hé
 - Opérations groupées (ex. « mettre à jour les paquets sur le groupe *prod* », en série, arrêt au premier échec).
 - Mise à jour des agents par vagues avec retour automatique.
 - Script d'installation d'agent signé ; Debian/Ubuntu amd64 + arm64.
+- 🌍 **API publique (D-22)** : OpenAPI publiée, jetons à portée pour la lecture et les opérations `routine`/`change`.
+- 🌍 **Distribution** : dépôt APT signé (agent puis central) ; image Docker du central (D-17).
+- 🌍 **Sauvegarde et reprise du central** (base, clé maître, CA des agents), procédure testée.
+- 🌍 **Audit de sécurité externe avant la publication de la 3.2** (le central devient la clé de toute la flotte).
 
 | | |
 |---|---|
@@ -183,12 +197,12 @@ L'exemple proposait « consolidation → infrastructure (multi-serveurs) → hé
 
 **Fonctionnalités**
 - ORG-01/02/03/04/05 : organisations, équipes, rôles personnalisés, permissions à portée (le modèle existe depuis la Phase 1, on livre l'interface).
-- ORG-08 / AUT-07 : jetons d'API publics pour tous, OpenAPI publiée, CLI distante (AUT-11).
+- ORG-08 / AUT-07 : API publique **complète** (toutes les opérations, jetons de service par organisation), CLI distante (AUT-11) ; la première version publique arrive en 3.2 (D-22).
 - ORG-11 : opérations groupées avancées (lots, fenêtres).
 - ORG-12 : validation à quatre yeux (option).
 - SEC-12 : OIDC.
 - ORG-10 : extensions niveaux 1 et 2 (intégrations, paquets d'opérations) signées ; premières extensions officielles (DNS Cloudflare/OVH, catalogue d'applications, WordPress).
-- Audit de sécurité externe avant publication de la 4.0.
+- Second audit de sécurité externe avant publication de la 4.0 (le premier a lieu avant la 3.2).
 
 | | |
 |---|---|
