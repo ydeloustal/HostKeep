@@ -204,7 +204,7 @@ Légende : ✅ Fonctionnelle et complète · 🟡 Fonctionnelle mais perfectible
 
 Classement par sévérité estimée (impact × facilité). Aucune faille permettant à un **visiteur anonyme** de prendre la main n'a été trouvée à la lecture.
 
-### S1 — Exécution de code root via la configuration rclone libre · **Élevée** · [Vérifié + Hypothèse] · **Corrigé (non publié)**
+### S1 — Exécution de code root via la configuration rclone libre · **Élevée** · [Vérifié + Hypothèse] · **Corrigé en 2.10.0**
 > Corrigé par la liste blanche `app/src/rclone_rules.php`, appliquée à l'enregistrement et à l'écriture de `rclone.conf`. Reste à faire : lancer rclone sous un utilisateur non root.
 
 - **Fait :** le type de destination « Autre » accepte n'importe quelles lignes `clé = valeur` (`secrettext_problem` ne vérifie que la syntaxe et la présence de `type`). `offsite_write_conf()` les recopie telles quelles dans `/etc/hostkeep/rclone.conf`, puis le **collecteur root** lance `rclone`.
@@ -213,7 +213,7 @@ Classement par sévérité estimée (impact × facilité). Aucune faille permett
 - **Leçon d'architecture :** la frontière de privilège ne passe pas seulement par le helper : **tout réglage lu par un processus root est une entrée non fiable**. Même remarque, à moindre impact, pour `backup.exclude` (passé à `tar`, correctement échappé), `monitor.ping_url` et `notify.webhook_url` (SSRF depuis le serveur, protocoles limités à HTTP/HTTPS, redirections refusées : correct).
 - **Correctif [Recommandation] :** liste blanche de clés rclone par backend (ou suppression du mode « Autre » au profit de types explicites : S3, SFTP, WebDAV, B2, Google Drive par jeton), refus explicite de `ssh`, `local`, `alias`, `union`, `combine`, `*_command` ; lancer rclone sous un utilisateur dédié non root avec accès en lecture seule aux sauvegardes.
 
-### S2 — Frontière Administrateur → Super Admin poreuse · **Moyenne** · [Vérifié] · **Corrigé (non publié)**
+### S2 — Frontière Administrateur → Super Admin poreuse · **Moyenne** · [Vérifié] · **Corrigé en 2.10.0**
 > Corrigé : fichiers de Hostkeep refusés par le helper, permission `backups.panel` (Super Admin) pour la base et l'archive `hostkeep` et l'archive complète, `.env` du panel déplacé de l'archive `www` vers l'archive `hostkeep`. **Choix assumé :** les secrets *des sites* (`.env`, `wp-config.php`) restent lisibles par un Administrateur, qui peut de toute façon télécharger leurs bases et l'archive `www` ; seule la frontière avec les secrets *du panel* est protégée.
 
 - L'**explorateur de fichiers** (`files.view`, rôle Administrateur) a `/var/www` dans ses racines par défaut, donc `/var/www/hostkeep/.env`, qui contient `HOSTKEEP_APP_KEY` (seuls les noms de type clé privée sont refusés).
@@ -227,11 +227,11 @@ Classement par sévérité estimée (impact × facilité). Aucune faille permett
 - **Impact :** compromission du compte GitHub du mainteneur ou du dépôt = root sur toutes les instances qui cliquent « Mettre à jour » (et `c_panel` fait un `git fetch` horaire, sans exécuter).
 - **Correctif :** publier des **releases signées** (archive + signature minisign/sigstore, clé publique embarquée), mettre à jour sur **tags** et non sur une branche, vérifier la signature avant extraction.
 
-### S4 — Sortie des tâches lisible par tout compte · **Faible à moyenne** · [Vérifié] · **Corrigé (non publié)**
+### S4 — Sortie des tâches lisible par tout compte · **Faible à moyenne** · [Vérifié] · **Corrigé en 2.10.0**
 - La route `job` n'exige **aucune permission** : un Lecteur peut lire la sortie de n'importe quelle tâche dont il devine l'identifiant (`<timestamp>-<pid>`, énumérable). Les sorties contiennent des chemins, versions, erreurs, parfois des extraits de configuration.
 - **Correctif :** enregistrer l'auteur de la tâche ; n'autoriser la lecture qu'à l'auteur et aux rôles ayant la permission de l'action ; identifiants aléatoires (UUID v4).
 
-### S5 — Confiance excessive dans `X-Forwarded-For` en mode proxy · **Faible** · [Vérifié] · **Corrigé (non publié)**
+### S5 — Confiance excessive dans `X-Forwarded-For` en mode proxy · **Faible** · [Vérifié] · **Corrigé en 2.10.0**
 > `--trusted-proxy`. Si l'adresse du proxy est inconnue (écoute ni locale ni sur docker0), l'installateur garde les réseaux privés et l'avertit.
 - Le vhost local généré fait `set_real_ip_from` sur 127.0.0.0/8, 10/8, 172.16/12, 192.168/16. Tout processus ou conteneur de ces réseaux (ex. un conteneur Docker compromis) peut **usurper l'IP cliente** : contournement de la liste d'IP autorisées, du limiteur de tentatives, et bannissement fail2ban d'IP arbitraires.
 - **Correctif :** ne faire confiance qu'à l'IP exacte du proxy détecté (option `--trusted-proxy`).
