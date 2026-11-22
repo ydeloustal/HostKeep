@@ -5,6 +5,10 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.10.0] — 2026-11-22
+
+Version de sécurité : corrige les failles relevées par l'audit (`docs/strategy/CURRENT_STATE_AUDIT.md`). Mise à jour recommandée.
+
 ### Sécurité
 - **Sauvegarde externe, destination « Autre » : la configuration rclone collée est désormais une liste blanche.** rclone tourne en root dans le collecteur ; certaines de ses options lancent un programme ou lisent un fichier local (`ssh`, `*_command`, `*_file`, backends `local`, `alias`, `union`, `crypt`…), ce qui permettait à un compte Administrateur d'exécuter des commandes en root. Seuls les backends de stockage distants courants et les options d'identification et d'adresse sont acceptés ; le refus nomme l'option en cause.
 - La règle est vérifiée à l'enregistrement **et** à chaque écriture de `rclone.conf` : une configuration enregistrée avant cette version et devenue invalide fait échouer la copie externe avec une alerte qui explique quoi corriger (rien n'est envoyé tant qu'elle n'est pas corrigée).
