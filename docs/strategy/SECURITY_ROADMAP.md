@@ -34,14 +34,14 @@
 
 | ID | Correctif | Critère de validation |
 |---|---|---|
-| S1 | Destination « Autre » rclone : **liste blanche de clés** par backend (`type`, `provider`, `endpoint`, `region`, `access_key_id`, `secret_access_key`, `host`, `user`, `port`, `key_pem`, `pass`, `token`, `client_id`, `client_secret`, `root_folder_id`, `scope`, `drive_id`, `url`, `vendor`, `account`, `key`…), refus explicite de `type = local|alias|union|combine|chunker` et de toute clé `ssh`, `*command*`, `*_exec`. rclone lancé avec `--config` en lecture seule. **Étape suivante :** rclone sous un utilisateur dédié non root. | Test unitaire : chaque clé interdite est refusée à l'enregistrement **et** ignorée à l'écriture de `rclone.conf` |
+| S1 | **Fait (non publié).** Destination « Autre » rclone : **liste blanche de clés** par backend (`type`, `provider`, `endpoint`, `region`, `access_key_id`, `secret_access_key`, `host`, `user`, `port`, `key_pem`, `pass`, `token`, `client_id`, `client_secret`, `root_folder_id`, `scope`, `drive_id`, `url`, `vendor`, `account`, `key`…), refus explicite de `type = local|alias|union|combine|chunker` et de toute clé `ssh`, `*command*`, `*_exec`. rclone lancé avec `--config` en lecture seule. **Étape suivante :** rclone sous un utilisateur dédié non root. | Test unitaire : chaque clé interdite est refusée à l'enregistrement **et** ignorée à l'écriture de `rclone.conf` |
 | S2 | **Fait (non publié).** Explorateur : fichiers de Hostkeep toujours refusés par le helper. Permission `backups.panel` (Super Admin) pour la base et l'archive `hostkeep` et l'archive complète d'un jour ; `.env` du panel déplacé de l'archive `www` vers l'archive `hostkeep`. Les secrets des sites restent accessibles aux Administrateurs (ils ont déjà leurs bases et l'archive `www`). | `tests/helper/fs_rules_test.sh`, `tests/php/rbac_test.php` |
-| S3 | Releases signées (minisign) sur tags ; `self-update` vérifie la signature avec la clé publique embarquée ; refus d'une branche non taguée sauf mode « développeur » explicite. | Une release au contenu modifié est refusée |
-| S4 | Jobs : auteur enregistré, lecture réservée à l'auteur et aux rôles ayant la permission de l'action ; identifiants UUID v4. | Un Lecteur reçoit 403 sur la sortie d'une tâche Administrateur |
-| S5 | Mode proxy : `set_real_ip_from` limité à l'adresse du proxy détecté (option `--trusted-proxy`). | Un en-tête `X-Forwarded-For` venant d'une autre IP est ignoré |
-| B1 | Le résultat d'un job est écrit par le helper (fichier `rc`) **et** réconcilié par le collecteur en fin de cycle. | Aucune ligne d'audit avec `rc NULL` après 10 min |
-| B2 | Clé d'alerte stable (`type:ressource`) indépendante du texte. | Une alerte RAM qui varie de 7 % à 6 % n'envoie aucune nouvelle notification |
-| — | `SECURITY.md` : contact, délai de réponse (72 h), politique de divulgation coordonnée (90 j), versions supportées. | Fichier publié |
+| S3 | **Fait (non publié), actif quand la clé du mainteneur est déclarée.** Releases signées (minisign) sur tags ; `self-update` vérifie la signature avec la clé publique embarquée ; refus d'une branche non taguée sauf mode « développeur » explicite. | Une release au contenu modifié est refusée |
+| S4 | **Fait (non publié).** Jobs : auteur enregistré, lecture réservée à l'auteur et aux rôles ayant la permission de l'action ; identifiants UUID v4. | Un Lecteur reçoit 403 sur la sortie d'une tâche Administrateur |
+| S5 | **Fait (non publié).** Mode proxy : `set_real_ip_from` limité à l'adresse du proxy détecté (option `--trusted-proxy`). | Un en-tête `X-Forwarded-For` venant d'une autre IP est ignoré |
+| B1 | **Fait (non publié).** Le résultat d'un job est écrit par le helper (fichier `rc`) **et** réconcilié par le collecteur en fin de cycle. | Aucune ligne d'audit avec `rc NULL` après 10 min |
+| B2 | **Fait (non publié).** Clé d'alerte stable (`type:ressource`) indépendante du texte. | Une alerte RAM qui varie de 7 % à 6 % n'envoie aucune nouvelle notification |
+| — | **Fait.** `SECURITY.md` : contact, délai de réponse (72 h), politique de divulgation coordonnée (90 j), versions supportées. | Fichier publié |
 
 ---
 

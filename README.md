@@ -417,7 +417,10 @@ system/
   hardening/      corrections de l'audit : en-têtes, fichiers sensibles, version (Apache, Nginx, bloc Caddy)
   systemd/        service, timers de collecte, de sauvegarde et d'audit
   …               sudoers, PHP-FPM dédié, fail2ban, logrotate, MariaDB, Apache
-docs/             RESTORE.md (notice de l'archive de migration), captures d'écran, maquettes
+docs/             RESTORE.md (notice de l'archive de migration), RELEASING.md (versions signées), strategy/ (audit, feuille de route),
+                  captures d'écran, maquettes
+tests/            php/ (règles PHP) et helper/ (helper root), lancés par le CI
+tools/            mock.py : serveur de démo de l'interface, sans PHP ni base (voir CONTRIBUTING.md)
 install.sh        installateur (une ligne, deps, app, web, admin, status, uninstall)
 .env.example      configuration du serveur, commentée
 ```

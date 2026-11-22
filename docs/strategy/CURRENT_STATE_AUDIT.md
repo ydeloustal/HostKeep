@@ -221,16 +221,18 @@ Classement par sévérité estimée (impact × facilité). Aucune faille permett
 - Avec la clé, un Administrateur déchiffre les secrets TOTP des Super Admins et tous les secrets (SMTP, S3, webhooks). Il lit aussi les `.env` / `wp-config.php` de toutes les applications du serveur.
 - **Correctif :** exclure `/var/www/hostkeep` et tout fichier `.env*`, `*config*.php`, `*.pem`, `*.key` des lectures par défaut (liste de refus par motif + racine Hostkeep interdite) ; exclure la base `hostkeep` des téléchargements hors Super Admin ; documenter clairement que « Administrateur ≈ root sur les données des sites ».
 
-### S3 — Mise à jour du panel = exécution root d'un dépôt distant non signé · **Moyenne** · [Vérifié]
+### S3 — Mise à jour du panel = exécution root d'un dépôt distant non signé · **Moyenne** · [Vérifié] · **Mécanisme livré, actif dès qu'une clé est déclarée**
+> Tags signés vérifiés par git (`system/allowed_signers`, `docs/RELEASING.md`). Tant que le mainteneur n'a pas ajouté sa clé publique, le comportement reste l'ancien, signalé « non vérifié » dans le panel.
 - `self-update` fait `git fetch` + `merge --ff-only` puis lance `install.sh app` **en root**. Aucune vérification de signature (tag/commit GPG ou SSH, sigstore). Le commentaire du CI le reconnaît (« protect it on GitHub »).
 - **Impact :** compromission du compte GitHub du mainteneur ou du dépôt = root sur toutes les instances qui cliquent « Mettre à jour » (et `c_panel` fait un `git fetch` horaire, sans exécuter).
 - **Correctif :** publier des **releases signées** (archive + signature minisign/sigstore, clé publique embarquée), mettre à jour sur **tags** et non sur une branche, vérifier la signature avant extraction.
 
-### S4 — Sortie des tâches lisible par tout compte · **Faible à moyenne** · [Vérifié]
+### S4 — Sortie des tâches lisible par tout compte · **Faible à moyenne** · [Vérifié] · **Corrigé (non publié)**
 - La route `job` n'exige **aucune permission** : un Lecteur peut lire la sortie de n'importe quelle tâche dont il devine l'identifiant (`<timestamp>-<pid>`, énumérable). Les sorties contiennent des chemins, versions, erreurs, parfois des extraits de configuration.
 - **Correctif :** enregistrer l'auteur de la tâche ; n'autoriser la lecture qu'à l'auteur et aux rôles ayant la permission de l'action ; identifiants aléatoires (UUID v4).
 
-### S5 — Confiance excessive dans `X-Forwarded-For` en mode proxy · **Faible** · [Vérifié]
+### S5 — Confiance excessive dans `X-Forwarded-For` en mode proxy · **Faible** · [Vérifié] · **Corrigé (non publié)**
+> `--trusted-proxy`. Si l'adresse du proxy est inconnue (écoute ni locale ni sur docker0), l'installateur garde les réseaux privés et l'avertit.
 - Le vhost local généré fait `set_real_ip_from` sur 127.0.0.0/8, 10/8, 172.16/12, 192.168/16. Tout processus ou conteneur de ces réseaux (ex. un conteneur Docker compromis) peut **usurper l'IP cliente** : contournement de la liste d'IP autorisées, du limiteur de tentatives, et bannissement fail2ban d'IP arbitraires.
 - **Correctif :** ne faire confiance qu'à l'IP exacte du proxy détecté (option `--trusted-proxy`).
 
@@ -257,8 +259,8 @@ Liste blanche + revalidation root · aucun shell côté web · DB par socket san
 
 | ID | Gravité | Constat | Preuve |
 |---|---|---|---|
-| **B1** | Moyenne | Le code retour d'une tâche n'est écrit dans `audit_log` **que lorsqu'un navigateur interroge** `job_status()`. Si l'utilisateur ferme la page, la ligne garde `rc = NULL` pour toujours : le journal ne dit pas si l'action a réussi. | `app/src/actions.php` (`job_status`) |
-| **B2** | Moyenne | Dédoublonnage des notifications par `md5(niveau + texte)`. Les textes « RAM disponible faible : 7 % », « Aucune copie externe réussie depuis 37 h », « Site … (HTTP 502) » changent d'un cycle à l'autre : **résolution + nouvelle alerte envoyées à chaque fois** (spam), au moins avec le niveau « avertissements ». | `app/bin/collect.php` (`c_notify`), `app/src/overview.php` |
+| **B1** ✅ corrigé | Moyenne | Le code retour d'une tâche n'est écrit dans `audit_log` **que lorsqu'un navigateur interroge** `job_status()`. Si l'utilisateur ferme la page, la ligne garde `rc = NULL` pour toujours : le journal ne dit pas si l'action a réussi. | `app/src/actions.php` (`job_status`) |
+| **B2** ✅ corrigé | Moyenne | Dédoublonnage des notifications par `md5(niveau + texte)`. Les textes « RAM disponible faible : 7 % », « Aucune copie externe réussie depuis 37 h », « Site … (HTTP 502) » changent d'un cycle à l'autre : **résolution + nouvelle alerte envoyées à chaque fois** (spam), au moins avec le niveau « avertissements ». | `app/bin/collect.php` (`c_notify`), `app/src/overview.php` |
 | **B3** | Info | `managed_services()` lance `systemctl` ; elle n'est appelée que par le collecteur (vérifié), mais vit dans `env.php`, chargé aussi côté web. Pas de bug aujourd'hui ; à déplacer côté collecteur pour éviter un appel futur par erreur. | `app/src/env.php` |
 | **B4** | Faible | Les sondes de sites et l'audit sont **séquentiels** (`curl --max-time 8` par site, plusieurs sondes par site pour l'audit). Avec 40 sites injoignables, la collecte « 5 min » dépasse 5 min ; le verrou évite le chevauchement mais les données deviennent anciennes sans alerte dédiée. | `c_sites`, `c_scan` |
 | **B5** | Faible | Métriques : un seul système de fichiers (`/`) et le réseau total ; une partition `/var` pleine n'apparaît pas dans l'historique ni dans la prévision. | `c_metrics`, `disk_forecast` |
