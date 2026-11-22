@@ -82,7 +82,24 @@ Les autres décisions (D-01, D-02, D-06, D-07, D-09, D-10, D-11, D-13, D-14, D-1
 
 ---
 
-## 6. Prochaines étapes concrètes (Phase 0)
+## 6. Avancement de la Phase 0 (au 22/11/2026)
+
+| Étape | État | Où |
+|---|---|---|
+| 1. rclone en liste blanche (S1) | ✅ fait | PR `fix/s1-rclone-allowlist` |
+| 2. Frontière Administrateur / Super Admin (S2) | ✅ fait | PR `fix/s2-admin-boundary` |
+| 3. Accès aux sorties de tâches (S4) | ✅ fait | PR `fix/phase0-hardening` |
+| 4. Proxy de confiance (S5) | ✅ fait | PR `fix/phase0-hardening` |
+| 5. Clés d'alerte stables (B2) | ✅ fait | PR `fix/phase0-hardening` |
+| 6. Résultat des tâches au journal (B1) | ✅ fait | PR `fix/phase0-hardening` |
+| 7. CI : PHP 8.1–8.4, tests helper et PHP, gitleaks | ✅ fait | PR `fix/phase0-hardening` |
+| 8. Releases signées (S3) | ✅ mécanisme fait — **à activer par le mainteneur** (créer la clé, `docs/RELEASING.md`) | PR `fix/phase0-hardening` |
+| 9. `SECURITY.md`, `CONTRIBUTING.md`, `tools/mock.py` | ✅ fait | PR `fix/phase0-hardening` |
+| 10. Mesures de référence (RAM, CPU, collecte, Lighthouse) | ❌ non fait : nécessite un serveur réel | — |
+
+Restent à faire par le mainteneur pour clore la Phase 0 : fusionner les PR dans l'ordre (S1, S2, phase0), créer la clé de signature et publier la 2.10.0 signée, protéger `main` sur GitHub, activer le signalement privé de failles (*Settings › Code security*), et relever les mesures de référence sur un serveur.
+
+## 6 bis. Liste initiale des étapes (Phase 0)
 
 Ordre conseillé, chaque ligne = une branche / une PR :
 
