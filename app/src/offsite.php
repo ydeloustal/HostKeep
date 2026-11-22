@@ -105,7 +105,7 @@ function offsite_write_conf(): ?string
             array_push($c, 'type = sftp', 'host = ' . setting('offsite.sftp_host'), 'port = ' . setting_int('offsite.sftp_port'),
                 'user = ' . setting('offsite.sftp_user'));
             if (setting('offsite.sftp_key') !== '') {
-                $c[] = 'key_pem = ' . str_replace("\n", '\n', trim(setting('offsite.sftp_key')));
+                $c[] = 'key_pem = ' . str_replace(["\r", "\n"], ['', '\n'], trim(setting('offsite.sftp_key')));
             }
             if (setting('offsite.sftp_password') !== '') {
                 $c[] = 'pass = ' . rclone_obscure(setting('offsite.sftp_password'));
@@ -116,17 +116,23 @@ function offsite_write_conf(): ?string
             if ($raw === '') {
                 return 'Colle la configuration rclone de la destination.';
             }
-            foreach (explode("\n", $raw) as $l) {
-                $l = trim($l);
-                if ($l !== '' && $l[0] !== '#' && $l[0] !== ';' && $l[0] !== '[') {
-                    $c[] = $l;
-                }
+            // checked again here: the stored value may predate the allow-list (or the table may have been written directly)
+            $parsed = rclone_config_parse($raw);
+            if ($parsed['error'] !== null) {
+                return 'Configuration rclone refusée : ' . $parsed['error'] . ' Corrige-la dans Administration › Paramètres › Sauvegarde externe.';
             }
+            array_push($c, ...$parsed['lines']);
     }
     if (offsite_crypted()) {
         $path = trim(setting('offsite.path'), '/');
         array_push($c, '', '[hostkeep-crypt]', 'type = crypt', 'remote = hostkeep:' . $path, 'filename_encryption = standard',
             'directory_name_encryption = true', 'password = ' . rclone_obscure(setting('offsite.crypt_password')));
+    }
+    // one option per line: a value holding a line break would add options of its own choosing
+    foreach ($c as $line) {
+        if (preg_match('/[\x00-\x1F\x7F]/', $line)) {
+            return 'Réglage de la sauvegarde externe invalide (caractère de contrôle) : enregistre de nouveau les identifiants.';
+        }
     }
     if (!is_dir(dirname(RCLONE_CONF))) {
         mkdir(dirname(RCLONE_CONF), 0750, true);

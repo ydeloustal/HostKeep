@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/rclone_rules.php';
+
 /**
  * Panel settings, stored in the "settings" table and edited from Administration › Paramètres.
  * Each group is guarded by one permission (app/src/rbac.php). Values are validated here, never trusted
@@ -60,7 +62,7 @@ function settings_schema(): array
             'offsite.sftp_user' => ['text', '', 'Utilisateur', '', ['max' => 64, 'show' => ['offsite.type', ['sftp']]]],
             'offsite.sftp_password' => ['password', '', 'Mot de passe', 'Ou une clé privée ci-dessous (recommandé). Stocké chiffré.', ['show' => ['offsite.type', ['sftp']]]],
             'offsite.sftp_key' => ['secrettext', '', 'Clé privée SSH', 'Le contenu complet de la clé (OpenSSH ou PEM), sans phrase de passe. Stockée chiffrée, jamais réaffichée.', ['show' => ['offsite.type', ['sftp']]]],
-            'offsite.rclone_config' => ['secrettext', '', 'Configuration rclone', 'Les lignes « clé = valeur » d\'une section de rclone.conf (le titre [nom] est ignoré). Pour Google Drive : lance « rclone config » sur ton ordinateur, puis colle ici la section obtenue. Stockée chiffrée.', ['show' => ['offsite.type', ['rclone']]]],
+            'offsite.rclone_config' => ['secrettext', '', 'Configuration rclone', 'Les lignes « clé = valeur » d\'une section de rclone.conf (le titre [nom] est ignoré). Pour Google Drive : lance « rclone config » sur ton ordinateur, puis colle ici la section obtenue. Seuls les stockages distants (Drive, Dropbox, OneDrive, B2, WebDAV, SFTP…) et leurs options d\'identification sont acceptés. Stockée chiffrée.', ['show' => ['offsite.type', ['rclone']]]],
             'offsite.path' => ['text', '', 'Dossier distant', 'S3 : le nom du bucket, puis un dossier si tu veux. Les sauvegardes y sont rangées par serveur, puis par jour.', ['max' => 200, 'placeholder' => 'mon-bucket/hostkeep']],
             'offsite.keep_days' => ['int', '30', 'Conservation à distance (jours)', 'Les copies distantes plus anciennes sont supprimées.', ['min' => 1, 'max' => 3650]],
             'offsite.crypt_password' => ['password', '', 'Phrase de chiffrement (recommandé)', 'Les fichiers sont chiffrés avant l\'envoi (rclone crypt) : l\'hébergeur distant ne voit ni les noms ni le contenu. Garde-la ailleurs : sans elle, les copies sont illisibles. La changer rend les anciennes copies illisibles avec la nouvelle.', []],
@@ -323,20 +325,7 @@ function secrettext_problem(string $key, string $v): ?string
         return 'Ce n\'est pas une clé privée (-----BEGIN … PRIVATE KEY-----).';
     }
     if ($key === 'offsite.rclone_config') {
-        $type = false;
-        foreach (preg_split('/\n/', $v) as $l) {
-            $l = trim($l);
-            if ($l === '' || $l[0] === '#' || $l[0] === ';' || preg_match('/^\[[^\]]*\]$/', $l)) {
-                continue;
-            }
-            if (!preg_match('/^([a-z0-9_]{1,60})\s*=\s*[^\x00-\x1F\x7F]*$/D', $l, $m)) {
-                return "Ligne non reconnue (attendu « clé = valeur ») : " . mb_substr($l, 0, 60);
-            }
-            $type = $type || $m[1] === 'type';
-        }
-        if (!$type) {
-            return 'Il manque la ligne « type = … » (ex. type = drive).';
-        }
+        return rclone_config_parse($v)['error'];   // allow-list: app/src/rclone_rules.php
     }
     return null;
 }
