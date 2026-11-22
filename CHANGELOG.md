@@ -5,6 +5,10 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+## [2.10.1] — 2026-11-22
+
+Corrige l'installateur (arrêt silencieux sans DNS, Caddy jamais installé) et met la documentation à jour ; tests d'installation réelle et d'attaque.
+
 ### Corrigé
 - **Installation : arrêt silencieux quand le domaine ne résout pas encore.** Juste après le récapitulatif, l'installateur s'arrêtait sans message si l'enregistrement DNS n'existait pas encore (cas fréquent) ; il affiche maintenant « ne résout pas encore » et continue.
 - **Caddy n'était jamais installé automatiquement** (`--web caddy`), même là où il est dans les dépôts (Debian 13, Ubuntu) : la détection échouait toujours. Même cause pour la vérification « ce domaine est-il déjà servi par un autre site Caddy ? », qui pouvait laisser passer un conflit, et pour le contrôle « base inconnue » de la restauration. Un test empêche désormais ce schéma (`| grep -q` en `pipefail`) de revenir.
