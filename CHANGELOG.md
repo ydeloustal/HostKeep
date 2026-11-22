@@ -5,6 +5,17 @@ versions selon [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Non publié]
 
+### Corrigé
+- **Installation : arrêt silencieux quand le domaine ne résout pas encore.** Juste après le récapitulatif, l'installateur s'arrêtait sans message si l'enregistrement DNS n'existait pas encore (cas fréquent) ; il affiche maintenant « ne résout pas encore » et continue.
+- **Caddy n'était jamais installé automatiquement** (`--web caddy`), même là où il est dans les dépôts (Debian 13, Ubuntu) : la détection échouait toujours. Même cause pour la vérification « ce domaine est-il déjà servi par un autre site Caddy ? », qui pouvait laisser passer un conflit, et pour le contrôle « base inconnue » de la restauration. Un test empêche désormais ce schéma (`| grep -q` en `pipefail`) de revenir.
+
+### Documentation
+- README à jour pour la 2.10 : qui peut télécharger quoi, sécurité, mises à jour (*Administration › Version*), dépannage (proxy de confiance, configuration rclone refusée, « non vérifiées »), Caddy selon la distribution, lien vers `SECURITY.md`.
+
+### Tests
+- **Tests d'intégration** (`tests/integration/`) : installation réelle dans un conteneur systemd, puis 45 tentatives d'attaque (droits des rôles, secrets du panel, injections, CSRF, rclone, force brute). Passés sur Debian 12 + Nginx, Ubuntu 22.04 + Apache (PHP 8.1) et Ubuntu 24.04 + Nginx ; installations vérifiées aussi avec Apache, le mode proxy (usurpation d'IP refusée) et Caddy sur Debian 13.
+- Analyse Semgrep (règles PHP, JavaScript, sécurité, secrets) : 6 signalements, tous des faux positifs vérifiés.
+
 ## [2.10.0] — 2026-11-22
 
 Version de sécurité : corrige les failles relevées par l'audit (`docs/strategy/CURRENT_STATE_AUDIT.md`). Mise à jour recommandée.
