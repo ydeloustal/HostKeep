@@ -247,7 +247,7 @@ Approche progressive, du moins risqué au plus risqué ⚑ D-10 :
 
 ## 10. Mises à jour
 
-- **Releases signées** (archive + signature minisign ou sigstore), sur **tags** ; canal `stable` / `beta` ⚑ D-11.
+- **Releases signées** : depuis la 2.10.0, tags git signés en SSH vérifiés à la mise à jour (actifs dès que la clé est déclarée). Cible : **archives de version signées**, vérifiées par l'installateur en une ligne et par la mise à jour, sans git sur les serveurs, puis **dépôt APT** ; canaux `stable` / `beta` ⚑ D-11.
 - **Central :** téléchargement, vérification de signature, migrations, bascule atomique (`releases/<version>` + lien `current`), retour arrière si la vérification de santé échoue.
 - **Agents :** mis à jour par le central, **par vagues** (1 serveur, puis 10 %, puis tous), avec retour automatique si l'agent ne se reconnecte pas dans les 2 minutes.
 - **Compatibilité :** le central supporte les agents de version N et N-1 ; le protocole porte un numéro de version.
@@ -278,11 +278,11 @@ Approche progressive, du moins risqué au plus risqué ⚑ D-10 :
 
 | Étape | Contenu | Livrable utilisable |
 |---|---|---|
-| M0 | Correctifs sécurité (S1–S5, B1, B2), tests | 2.10 |
-| M1 | Migrations versionnées ; routeur + modules ; i18n ; **catalogue d'opérations** généré depuis les 21 verbes actuels ; jobs en base | 3.0 (mono-serveur, même périmètre, base saine) |
+| M0 ✅ | Correctifs sécurité (S1, S2, S4, S5, B1, B2, B9, B10), mécanisme S3, socle de tests | 2.10.0 / 2.10.1 (livré) |
+| M1 | Migrations versionnées ; routeur + modules ; i18n FR/EN ; **catalogue d'opérations** généré depuis les 21 verbes actuels ; jobs en base ; modèle multi-organisations (organisation « Default », rôles à portée, réglages à trois niveaux) + tests d'accès croisé ; archives signées | 3.0 (mono-serveur, même périmètre, base saine) |
 | M2 | `server_id` partout (serveur local par défaut) ; agent local Go qui remplace l'appel `sudo` depuis PHP ; `hostkeep-exec` délègue au helper Bash | 3.1 (PHP sans sudo) |
-| M3 | Enrôlement d'agents distants, vue flotte, opérations groupées | 3.2 (multi-serveurs) |
-| M4 | Organisations, rôles à portée, jetons d'API publics | 3.3 |
+| M3 | Enrôlement d'agents distants, vue flotte, opérations groupées ; API publique (jetons à portée, OpenAPI, D-22) ; APT, image Docker du central | 3.2 (multi-serveurs) |
+| M4 | Interface des organisations et équipes, rôles personnalisés, API complète | 4.0 (le modèle existe depuis M1) |
 | M5+ | Fonctionnalités par domaine, extensions, passerelle WebSocket | 3.x / 4.0 |
 
 ---
@@ -299,3 +299,43 @@ Approche progressive, du moins risqué au plus risqué ⚑ D-10 :
 | Front vanilla | Léger, accessible, mais monolithique | **Découper** en modules |
 
 **Conclusion :** aucune refonte complète n'est justifiée. Le passage à « central + agent » est une **extraction** de composants qui existent déjà (le helper et le collecteur sont, de fait, un agent local), pas un changement de philosophie.
+
+---
+
+## 15. Conformité à la vision « produit public à grande échelle »
+
+Hostkeep vise des **milliers d'installations indépendantes**, de la personne seule avec un VPS à l'équipe ou au prestataire qui gère des centaines de serveurs pour plusieurs clients. Revue de l'architecture à cette aune.
+
+### 15.1 Ce que l'architecture cible couvre déjà
+| Exigence | Réponse |
+|---|---|
+| Installations indépendantes, self-hosted | Central natif (et image Docker, D-17) ; aucun service tiers obligatoire |
+| Un ou plusieurs VPS | Agent par serveur, connexion sortante, mode « tout-en-un » par défaut (§3, §5) |
+| Plusieurs utilisateurs simultanés | Sessions en base, verrous de concurrence par ressource dans les jobs (§6) |
+| Organisations, équipes, permissions | Modèle `memberships` / `role_bindings` à portée (§7) |
+| Isolation entre organisations | `org_id` imposé par les dépôts + tests d'accès croisé (§7, sécurité §3.5) |
+| Architecture évolutive | Transport interchangeable (sondage → WebSocket), métriques extensibles (TSDB en extension) |
+| API publique documentée | `/api/v1` + OpenAPI ; calendrier avancé (D-22) |
+| Extensions | Trois niveaux signés (§9) |
+| Mises à jour simples et sûres | Tags signés (fait), puis archives signées et APT (D-11), agents par vagues (§10) |
+
+### 15.2 Choix actuels qui limitent l'ambition, et correctifs proposés
+| # | Limite | Impact pour un produit public | Correctif proposé | Quand |
+|---|---|---|---|---|
+| L1 | Installation en une ligne depuis `main`, **sans vérification de signature** ; un clone git sur chaque serveur | Une compromission du dépôt toucherait toutes les nouvelles installations ; mises à jour fragiles (dépôt modifié, dépendance à GitHub) | Archives signées vérifiées **avant** exécution ; dépôt APT (D-11) | Phase 1 (archives), Phase 2 (APT) |
+| L2 | Réglages (`settings`) globaux, une seule table | Impossible d'avoir des réglages par organisation (SMTP, alertes, sauvegarde externe d'un client) | Réglages à trois niveaux : instance, organisation, serveur ; héritage | Modèle en Phase 1, interface en Phase 6 |
+| L3 | Rôles globaux, 4 niveaux | Un prestataire ne peut pas limiter un client à « ses » serveurs | Rôles à portée (§7) ; **tests d'accès croisé dès la Phase 1**, avant même l'interface des organisations | Phase 1 (modèle + tests) |
+| L4 | API publique prévue en 4.0 seulement | Pas d'automatisation pour les professionnels pendant plus d'un an | D-22 : jetons et OpenAPI dès la 3.2 | Phase 2 |
+| L5 | Tout le projet en français | Peu de contributeurs et d'utilisateurs hors francophonie | D-18 : anglais pour le code, l'API et la doc de référence ; interface et doc utilisateur bilingues | Phase 1 |
+| L6 | Debian/Ubuntu seulement, MariaDB obligatoire, systemd requis | Exclut RHEL/Alma/Rocky, très présents en entreprise | Abstraction de distribution dans l'agent (§11) ; le central peut tourner en conteneur (D-17) | Phase 2 (agent), Phase 4 (RHEL) |
+| L7 | Mainteneur unique, pas de politique de support | Risque de pérennité perçu par les entreprises | D-19 (support), D-20 (contributions), doc contributeur, tests dans le CI | Phase 1 |
+| L8 | Transport par sondage HTTPS limité à ~100–200 serveurs par central | Un prestataire avec 1 000 serveurs | Passerelle WebSocket Go (§5.2) déclenchée dès 150 serveurs ou besoin de flux temps réel ; métriques vers une TSDB (extension) au-delà de quelques centaines | Phase 2 → Phase 5 |
+| L9 | Audit de sécurité externe prévu avant la 4.0 seulement | Le multi-serveurs (3.2) rend le central très sensible : une faille = toute la flotte | Avancer un audit externe **avant la publication de la 3.2** | Fin de Phase 2 |
+| L10 | Aucune documentation hors README | Les débutants comme les professionnels ont besoin d'un guide, de références et de procédures | Site de documentation versionné (installation, guides, référence API et opérations générée depuis le catalogue) | Phase 1 (socle), puis à chaque phase |
+| L11 | Pas de procédure de sauvegarde/restauration **du central** lui-même au-delà de l'archive de migration | Perdre le central = perdre la gestion de la flotte (certificats d'agents, secrets) | Sauvegarde chiffrée du central (base + clé maître + CA) et procédure de reprise testée | Phase 2 |
+
+### 15.3 Ce qui ne bloque pas
+- **PHP pour le central (D-02)** : adapté à une application web à forte part d'interface, déployé partout ; la partie « longue durée » (passerelle, agent) est en Go.
+- **MariaDB (D-06)** : suffit jusqu'à plusieurs centaines de serveurs par installation ; une abstraction stricte des requêtes (dépôts) laisse la porte ouverte à PostgreSQL si la demande se confirme.
+- **Pas de SaaS officiel** : cohérent avec « self-hosted d'abord » ; l'architecture n'empêche pas une offre hébergée plus tard (licence, D-15).
+

@@ -1,6 +1,6 @@
 # Analyse des écarts
 
-> Compare l'état réel de Hostkeep 2.9.0 (`CURRENT_STATE_AUDIT.md`) avec le catalogue cible (`FEATURE_CATALOG.md`).
+> Compare l'état réel de Hostkeep **2.10.1** (`CURRENT_STATE_AUDIT.md`, §0 pour le statut des constats) avec le catalogue cible (`FEATURE_CATALOG.md`).
 > Les fonctionnalités déjà correctement implémentées ne sont **pas** reproposées ; elles apparaissent seulement quand une extension de périmètre est utile.
 
 **Échelles**
@@ -15,19 +15,36 @@
 
 | Élément | État actuel | Importance | Complexité | Priorité | Recommandation |
 |---|---|---|---|---|---|
-| S1 — rclone root avec configuration libre | 🔴 faille de frontière | Haute | S | **P0** | Liste blanche de clés par backend, refus des options exécutables, rclone sous un utilisateur non root |
-| S2 — Admin lit `APP_KEY` et le dump `hostkeep` | 🔴 escalade de rôle | Haute | S | **P0** | Racine Hostkeep interdite à l'explorateur, motifs sensibles refusés, base `hostkeep` réservée au Super Admin |
-| S3 — Mise à jour non signée | 🟠 risque chaîne d'approvisionnement | Haute | M | **P0** | Releases signées sur tags, vérification avant installation |
-| S4 — Sortie des tâches lisible par tous | 🟠 fuite d'information | Moyenne | S | **P0** | Auteur + permission + identifiant aléatoire |
-| S5 — `X-Forwarded-For` de tous les réseaux privés | 🟡 | Moyenne | S | **P0** | Proxy de confiance explicite |
+| S1 — rclone root avec configuration libre | ✅ corrigé en 2.10.0 (reste : rclone non root, P1) | Haute | S | fait | Liste blanche de clés par backend, refus des options exécutables, rclone sous un utilisateur non root |
+| S2 — Admin lit `APP_KEY` et le dump `hostkeep` | ✅ corrigé en 2.10.0 | Haute | S | fait | Racine Hostkeep interdite à l'explorateur, motifs sensibles refusés, base `hostkeep` réservée au Super Admin |
+| S3 — Mise à jour non signée | 🟡 tags signés livrés en 2.10.0, **inactifs sans clé** ; archives signées en P1 | Haute | M | fait / **action mainteneur** | Releases signées sur tags, vérification avant installation |
+| S4 — Sortie des tâches lisible par tous | ✅ corrigé en 2.10.0 | Moyenne | S | fait | Auteur + permission + identifiant aléatoire |
+| S5 — `X-Forwarded-For` de tous les réseaux privés | ✅ corrigé en 2.10.0 | Moyenne | S | fait | Proxy de confiance explicite |
 | S6 — Journal d'audit modifiable | 🟡 | Moyenne | M | P1 | Table de résultats séparée, INSERT seul, chaînage |
 | S7 — Dumps SQL lisibles par le web | 🟡 | Moyenne | S | P1 | Passage par le helper, `root:root 600` |
-| B1 — `rc` absent du journal si personne ne suit la tâche | 🔴 | Moyenne | S | **P0** | Le helper écrit le résultat (ou le collecteur le réconcilie) |
-| B2 — Notifications répétées (texte variable) | 🔴 | Moyenne | S | **P0** | Clé d'alerte stable (`type:ressource`), texte séparé |
+| B1 — `rc` absent du journal si personne ne suit la tâche | ✅ corrigé en 2.10.0 | Moyenne | S | fait | Le helper écrit le résultat (ou le collecteur le réconcilie) |
+| B2 — Notifications répétées (texte variable) | ✅ corrigé en 2.10.0 | Moyenne | S | fait | Clé d'alerte stable (`type:ressource`), texte séparé |
 | B4 — Collecte séquentielle des sites | 🟡 | Moyenne | M | P1 | Sondes parallèles (curl multi), budget de temps, alerte « données anciennes » |
 | B5 — Un seul disque dans l'historique | 🟡 | Moyenne | S | P1 | Table `metrics_disk` par point de montage |
-| B6 — PHP 8.1 non testé | 🟡 | Moyenne | S | **P0** | Matrice CI 8.1 → 8.4 |
-| Tests automatisés | ⚪ | Haute | L | **P0/P1** | Voir `SECURITY_ROADMAP.md` §7 et roadmap Phase 1 |
+| B6 — PHP 8.1 non testé | ✅ corrigé en 2.10.0 | Moyenne | S | fait | Matrice CI 8.1 → 8.4 |
+| B9, B10 — installateur (DNS, `grep -q` + `pipefail`) | ✅ corrigés en 2.10.1 | Moyenne | S | fait | Trouvés par l'installation réelle |
+| Tests automatisés | 🟡 socle en 2.10 (PHP, helper, intégration hors CI) | Haute | L | **P1** | Voir `SECURITY_ROADMAP.md` §7 et roadmap Phase 1 |
+
+### 1 bis. Écarts liés à la vision « produit public » (🌍)
+
+| Élément | État actuel (2.10.1) | Importance | Complexité | Priorité | Recommandation |
+|---|---|---|---|---|---|
+| Installation vérifiée (archive signée) | ⚪ `curl … \| bash` depuis `main`, non vérifié | Haute | M | P1 | D-11 |
+| Dépôt APT, image Docker du central | ⚪ | Moyenne | M | P2 | D-11, D-17 |
+| Interface et doc en anglais | ⚪ tout en français | Haute | M + continu | P1 | D-18, i18n UI-11 |
+| Site de documentation (guides + référence) | ⚪ README seulement | Haute | M + continu | P1 | `TARGET_ARCHITECTURE.md` §15 (L10) |
+| Politique de versions et de support | ⚪ | Haute | S | P1 | D-19 |
+| Cadre de contribution (DCO, code de conduite, modèles) | 🟡 `CONTRIBUTING.md` | Moyenne | S | P1 | D-20 |
+| Réglages par organisation et par serveur | ⚪ réglages globaux | Haute | M | P1 (modèle) | L2 |
+| Tests d'accès croisé entre organisations | ⚪ | Haute | M | P1 | L3, sécurité §3.5 |
+| API publique (jetons à portée, OpenAPI) | ⚪ | Haute | L | P2 (3.2) | D-22 |
+| Sauvegarde et reprise du central | 🟡 archive de migration | Haute | M | P2 | L11 |
+| Audit de sécurité externe | ⚪ | Haute | — (budget) | Fin P2 | L9 |
 
 ---
 
@@ -160,7 +177,7 @@
 ### J. Automatisation
 | Fonctionnalité | État actuel | Importance | Complexité | Priorité | Recommandation |
 |---|---|---|---|---|---|
-| AUT-07 API publique + jetons | 🟠 (session seulement) | Haute | L | **P1** | `/api/v1`, OpenAPI, jetons à portée |
+| AUT-07 API publique + jetons | 🟠 (session seulement) | Haute | L | **P1** (API v1 interne) / **P2** (publique, 3.2) | `/api/v1`, OpenAPI, jetons à portée (D-22) |
 | AUT-09 Bus d'événements | ⚪ | Haute | M | **P1** | Table `events` + consommateurs |
 | AUT-02 Planification d'opérations | 🟡 (sauvegarde) | Haute | M | P2 | — |
 | AUT-05 Remédiation bornée | ⚪ | Haute | M | P2 | — |

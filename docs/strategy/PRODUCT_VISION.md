@@ -4,9 +4,29 @@
 
 > **Permettre à chacun — du particulier qui loue son premier VPS à l'équipe qui gère une flotte — d'administrer ses serveurs Linux en toute sécurité, sans terminal, depuis n'importe quel appareil.**
 
+## 1 bis. Un produit public, pas un outil personnel
+
+Hostkeep est conçu comme un **logiciel open source distribué publiquement**, destiné au grand public et aux professionnels, installé par des milliers de personnes et maintenu sur le long terme. **On ne suppose jamais que l'administrateur est le seul utilisateur.** Chaque fonctionnalité doit donc prévoir :
+
+| Exigence | Ce que ça impose à chaque fonctionnalité |
+|---|---|
+| Installations indépendantes, self-hosted | Aucun service tiers obligatoire ; fonctionne hors ligne une fois installé |
+| Un ou plusieurs VPS | Penser « un serveur parmi N » (`server_id`), jamais « ce serveur » |
+| Plusieurs utilisateurs simultanés | Permissions vérifiées côté serveur, actions concurrentes sans conflit, journal par auteur |
+| Organisations, équipes, permissions | Toute donnée appartient à une organisation ; tout droit a une portée |
+| Isolation des données | Accès croisé testé automatiquement pour chaque route |
+| Architecture évolutive | Du VPS unique à plusieurs centaines de serveurs par installation |
+| API publique documentée | Toute action de l'interface existe dans l'API, décrite en OpenAPI |
+| Extensions | Points d'extension signés plutôt que forks |
+| Installation, configuration et mises à jour simples | Une commande, des valeurs par défaut sûres, des mises à jour signées et réversibles |
+| Documentation pour débutants et professionnels | Guide pas à pas **et** référence complète, en français et en anglais |
+| Exigences professionnelles | Sécurité (audits, divulgation coordonnée), fiabilité (tests, retour arrière), performances mesurées, maintenabilité (support publié, contributions encadrées) |
+
+Ce qui, dans l'existant, limite encore cette ambition est listé avec ses correctifs dans `TARGET_ARCHITECTURE.md` §15.
+
 ## 2. Ce que Hostkeep est aujourd'hui, ce qu'il doit devenir
 
-| Aujourd'hui (2.9) | Demain (4.x) |
+| Aujourd'hui (2.10.1) | Demain (4.x) |
 |---|---|
 | Un serveur | Une flotte, organisée en groupes et en organisations |
 | Surtout observer (et quelques actions) | Observer **et** gérer : hôte, sites, conteneurs, bases, sauvegardes, réseau, sécurité |
@@ -88,7 +108,7 @@ Chaque standard est mesurable et vérifié en CI ou à chaque release. Les valeu
 | Central, 100 serveurs (hors MariaDB) | ≤ 300 Mo | ≤ 10 % d'un vCPU en moyenne |
 | Agent | ≤ 25 Mo RSS | ≤ 1 % d'un vCPU en moyenne |
 | Exécuteur au repos | 0 (activation par socket) | 0 |
-| Aujourd'hui (2.9) | **mesurer** | **mesurer** |
+| Aujourd'hui (2.10.1) | **mesurer** (pas encore fait sur un vrai VPS) | **mesurer** |
 
 ### 8.3 Disponibilité et fiabilité
 | Indicateur | Cible |
@@ -108,7 +128,7 @@ Chaque standard est mesurable et vérifié en CI ou à chaque release. Les valeu
 | Opérations couvertes par des tests de validation (valide / invalide / injection) | 100 % |
 | Routes couvertes par la matrice RBAC et d'accès croisé | 100 % |
 | `systemd-analyze security` des services Hostkeep | Score ≤ 3.0 |
-| Audit externe | Avant 4.0, puis tous les 2 ans |
+| Audit externe | Avant la 3.2 (multi-serveurs), avant la 4.0, puis tous les 2 ans |
 
 ### 8.5 Tests
 | Indicateur | Cible |

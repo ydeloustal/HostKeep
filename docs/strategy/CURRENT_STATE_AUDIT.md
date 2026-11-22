@@ -1,9 +1,37 @@
 # Audit technique de l'existant
 
-> **Version auditée :** 2.9.0, branche `develop`, commit `1b34003` (22/11/2026).
-> **Méthode :** lecture du code source (statique), sans exécution sur un serveur réel. Chaque constat indique sa nature :
-> **[Vérifié]** lu dans le code, **[Hypothèse]** déduit mais non reproduit, **[Recommandation]**.
-> **Limites :** aucun test d'installation réel, aucun test d'intrusion dynamique, aucune mesure de performance sur machine. Ces points sont listés en fin de document comme « à confirmer ».
+> **Audit initial :** 2.9.0, commit `1b34003` (22/11/2026). **Mis à jour pour la 2.10.1** (tag `v2.10.1`, 22/11/2026) : le statut de chaque constat est en §0 ; le reste du document décrit l'état d'origine, annoté là où la 2.10 l'a changé.
+> **Méthode :** lecture du code source, puis en 2.10.1 installations réelles dans des conteneurs systemd et 45 tests d'attaque (`tests/integration/`). Chaque constat indique sa nature :
+> **[Vérifié]** lu dans le code ou reproduit, **[Hypothèse]** déduit mais non reproduit, **[Recommandation]**.
+> **Limites restantes :** aucune mesure de performance sur un vrai VPS, ARM64 non testé, pas d'audit externe.
+
+---
+
+## 0. Statut des constats à la 2.10.1
+
+| ID | Constat | Statut 2.10.1 | Preuve / suite prévue |
+|---|---|---|---|
+| S1 | rclone : configuration libre exécutée en root | ✅ Corrigé (2.10.0) | Liste blanche vérifiée à l'enregistrement et à l'écriture ; tests unitaires + attaque réelle. **Reste :** lancer rclone sous un utilisateur non root (Phase 1) |
+| S2 | Administrateur → secrets du Super Admin | ✅ Corrigé (2.10.0) | Fichiers de Hostkeep refusés, permission `backups.panel` ; tests helper + attaques réelles |
+| S3 | Mises à jour non signées | 🟡 Mécanisme livré, **pas actif** | Tags signés SSH vérifiés par git ; actif dès qu'une clé est déclarée dans `system/allowed_signers` (action du mainteneur) |
+| S4 | Sortie des tâches lisible par tous | ✅ Corrigé (2.10.0) | Identifiants aléatoires, lecture auteur/permission ; attaque réelle |
+| S5 | `X-Forwarded-For` trop permissif | ✅ Corrigé (2.10.0) | `--trusted-proxy` ; usurpation testée sur une installation réelle |
+| S6 | Journal d'audit modifiable par le web | ⚪ Ouvert | Phase 1 (table de résultats séparée, INSERT seul, chaînage) |
+| S7 | Dumps SQL lisibles par le groupe web | ⚪ Ouvert | Phase 1 (téléchargement via le helper, `root:root 600`) |
+| S8 | Mineurs : repli `HTTP_HOST`, échecs 2FA non comptés par compte, pas de `NoNewPrivileges` | 🟡 Partiel | `SECURITY.md` publié ; le reste en Phase 1 (2FA, `base_url`) et Phase 2 (`NoNewPrivileges` quand PHP n'appelle plus `sudo`) |
+| B1 | Résultat des tâches absent du journal | ✅ Corrigé (2.10.0) | Réconciliation par le collecteur chaque minute |
+| B2 | Notifications répétées | ✅ Corrigé (2.10.0) | Clés d'alerte stables ; tests |
+| B3 | `managed_services()` dans `env.php` | ⚪ Ouvert (info) | Phase 1 (restructuration) |
+| B4 | Sondes de sites séquentielles | ⚪ Ouvert | Phase 1 |
+| B5 | Un seul disque dans l'historique | ⚪ Ouvert | Phase 1 |
+| B6 | PHP 8.1 non testé | ✅ Corrigé (2.10.0) | CI PHP 8.1 → 8.4 + installation réelle Ubuntu 22.04 |
+| B7 | Permissions dupliquées dans le front | ⚪ Ouvert | Phase 1 (catalogue d'opérations) |
+| B8 | Nom « Hostkeep » / « HostKeep » | ⚪ Ouvert | Décision D-16 |
+| B9 | Installateur muet sans DNS | ✅ Corrigé (2.10.1) | Installation réelle |
+| B10 | `\| grep -q` sous `pipefail` (Caddy jamais installé…) | ✅ Corrigé (2.10.1) | Garde-fou `tests/helper/pipefail_test.sh` |
+| B11 | Auteur d'une tâche reconnu par son identifiant | ⚪ Ouvert (info) | Phase 1 (identifiant numérique du compte dans `jobs`) |
+
+**Conclusion :** aucune faille de gravité moyenne ou élevée n'est ouverte dans le code de la 2.10.1, à une réserve près : **S3 reste exploitable tant que la clé de signature n'est pas déclarée.**
 
 ---
 
@@ -16,8 +44,8 @@ Hostkeep est aujourd'hui un **panel d'administration mono-serveur**, natif (PHP 
 | Modèle de sécurité | **Bon**, avec 2 brèches de frontière | Helper en liste blanche, DB par socket sans mot de passe, privilèges SQL minimaux, CSP stricte. Mais le collecteur root lit des réglages écrits par le web (rclone), et la frontière Admin/Super Admin est poreuse. |
 | Couverture fonctionnelle | **Moyenne** (surveillance forte, administration faible) | Beaucoup d'observation, peu de gestion : pas de pare-feu, d'utilisateurs Linux, de Docker, de création de site/base, d'édition de fichiers. |
 | Architecture | **Saine mais mono-serveur et monolithique** | Tout suppose « ce serveur » : chemins, snapshots, métriques, actions. Routeur API unique, `app.js` de 1 575 lignes. |
-| Tests | **Quasi absents** | CI = lint (PHP, shellcheck, JS, JSON, sudoers) + idempotence du schéma. Aucun test unitaire, d'intégration, E2E ou de sécurité. |
-| Documentation | **Bonne côté utilisateur**, absente côté contributeur | README très complet, CHANGELOG tenu. Pas d'architecture, de guide de contribution, de `SECURITY.md`, ni de doc d'API. |
+| Tests | **Quasi absents** en 2.9 → **socle posé** en 2.10.1 | 2.9 : lint + schéma seulement. 2.10.1 : tests PHP (8.1–8.4), tests du helper, gitleaks, tests d'intégration et d'attaque (hors CI). Toujours pas : PHPStan, E2E du front, couverture mesurée. |
+| Documentation | **Bonne côté utilisateur**, partielle côté contributeur | README très complet, CHANGELOG tenu. 2.10 : `SECURITY.md`, `CONTRIBUTING.md`, `docs/RELEASING.md`, `docs/strategy/`. Toujours pas : doc d'API, site de documentation, version anglaise. |
 | Maintenabilité | **Correcte aujourd'hui, à risque demain** | Pas de dépendances, pas de build : excellent pour l'installation. Mais chaînes françaises en dur partout, permissions dupliquées front/back, migrations non versionnées. |
 | Performance | **Très légère** | PHP-FPM `ondemand` (0 processus au repos, 5 max, 64 Mo), graphiques SVG maison, polling suspendu en arrière-plan. Collecte séquentielle qui ne passera pas à l'échelle (voir §6). |
 
@@ -277,16 +305,16 @@ Liste blanche + revalidation root · aucun shell côté web · DB par socket san
 
 | Type | Présent | Détail |
 |---|:---:|---|
-| Lint PHP (8.2 + runner) | ✅ | `php -l` |
+| Lint PHP | ✅ | `php -l`, PHP 8.1 → 8.4 (2.10) |
 | shellcheck (warning) | ✅ | `install.sh`, helper, CLI, `restore.sh` |
 | Syntaxe JS, JSON, sudoers | ✅ | |
 | Idempotence du schéma SQL | ✅ | Chargé deux fois sur MariaDB 11.4 |
 | Analyse statique PHP (PHPStan/Psalm) | ⚪ | |
-| Tests unitaires (validateurs, RBAC, TOTP, chiffrement, parsing nginx/apache/caddy) | ⚪ | Les fonctions sont pourtant pures et faciles à tester. |
-| Tests du helper (bats) | ⚪ | La fonction `validate()` est la pièce la plus critique et n'a aucun test. |
-| Tests d'installation (Debian/Ubuntu en conteneur ou VM) | ⚪ | |
-| Tests E2E du front (Playwright) | ⚪ | Le serveur de démo `mock.py` les rendrait faciles. |
-| Tests de sécurité (SAST, DAST, matrice RBAC) | ⚪ | |
+| Tests unitaires (validateurs, RBAC, TOTP, chiffrement, parsing nginx/apache/caddy) | 🟡 (2.10) | `tests/php/` : règles rclone, rôles/sauvegardes, clés d'alerte. Manquent : TOTP, chiffrement, parsing des serveurs web |
+| Tests du helper | 🟡 (2.10) | `tests/helper/` : explorateur, mises à jour signées, garde-fou `pipefail`. Manque : `validate()` verbe par verbe |
+| Tests d'installation (Debian/Ubuntu en conteneur) | 🟡 (2.10.1) | `tests/integration/run.sh`, lancé à la main (pas dans le CI) |
+| Tests E2E du front (Playwright) | ⚪ | Le serveur de démo `tools/mock.py` les rendrait faciles. |
+| Tests de sécurité (SAST, DAST, matrice RBAC) | 🟡 (2.10.1) | gitleaks en CI ; Semgrep lancé une fois (faux positifs seulement) ; 45 attaques réelles (`tests/integration/attack.sh`) |
 | Mesures de performance / accessibilité | ⚪ | |
 
 ---
@@ -325,7 +353,7 @@ Liste blanche + revalidation root · aucun shell côté web · DB par socket san
 1. **Mono-serveur codé en dur** : chaque fonctionnalité ajoutée selon le modèle actuel augmentera le coût du passage au multi-serveurs. C'est le risque n° 1 (voir `TARGET_ARCHITECTURE.md`).
 2. **Liste blanche quadruplée** (PHP × 2, JS, Bash) : coût et risque d'erreur croissants à chaque action.
 3. **Helper Bash** : excellent pour 20 verbes, difficile à tester et à faire évoluer au-delà de ~50 (gestion Docker, pare-feu, utilisateurs, bases).
-4. **Aucun test** : le rythme de livraison (9 versions en 10 jours) sans filet expose à des régressions silencieuses sur des opérations root.
+4. **Tests encore partiels** (2.10.1 : socle posé, pas de couverture mesurée ni d'E2E) : le rythme de livraison expose à des régressions sur des opérations root ; les tests d'intégration doivent entrer dans le CI.
 5. **Chaînes en dur** : l'internationalisation coûtera plus cher à chaque écran ajouté.
 6. **Mainteneur unique** : documentation contributeur et tests sont les prérequis pour accueillir des contributions.
 
@@ -333,8 +361,9 @@ Liste blanche + revalidation root · aucun shell côté web · DB par socket san
 
 ## 12. À confirmer sur un serveur réel
 
-- Exploitabilité exacte de S1 selon la version de rclone de chaque distribution supportée.
-- Mesures de mémoire / CPU / durée de collecte (1, 20, 100 sites).
-- Installation sur ARM64 et sur Ubuntu 22.04 (PHP 8.1).
+- ~~Exploitabilité de S1~~ : sans objet, la liste blanche bloque les options dangereuses quelle que soit la version de rclone.
+- ~~Installation sur Ubuntu 22.04 (PHP 8.1)~~ : faite en 2.10.1, ainsi que Debian 12/13 et Ubuntu 24.04.
+- Mesures de mémoire / CPU / durée de collecte (1, 20, 100 sites) sur un vrai VPS.
+- Installation sur ARM64.
 - Score d'accessibilité (axe/Lighthouse) et parcours clavier complet.
-- Comportement réel des notifications avec `notify.level = warn` sur 24 h (B2).
+- Comportement des notifications sur 24 h en production (B2 est couvert par des tests unitaires).

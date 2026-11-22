@@ -135,7 +135,7 @@ Les « panels » couvrent des besoins très différents. Les placer sur deux axe
 
 Légende : ●● fort · ● présent · ○ partiel · — absent. Évaluation qualitative, à revérifier.
 
-| Domaine | Hostkeep 2.9 | 1Panel | Coolify | Portainer | Cockpit | Webmin/Virtualmin | Netdata | HestiaCP | Plesk | CloudPanel |
+| Domaine | Hostkeep 2.10.1 | 1Panel | Coolify | Portainer | Cockpit | Webmin/Virtualmin | Netdata | HestiaCP | Plesk | CloudPanel |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Admin hôte (services, paquets) | ● | ● | — | — | ●● | ●● | — | ● | ● | ○ |
 | Sécurité hôte (audit, pare-feu, SSH) | ● (audit) | ● | — | — | ● | ● | ○ | ● | ●● | ○ |
