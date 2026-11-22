@@ -24,7 +24,7 @@ L'exemple proposait « consolidation → infrastructure (multi-serveurs) → hé
 | Phase | Nom | Version | Durée indicative | Résultat principal |
 |---|---|---|---|---|
 | 0 ✅ | Sécurisation immédiate | 2.10.0 / 2.10.1 | livrée le 22/11/2026 | Failles corrigées, socle de tests, mécanisme de releases signées |
-| 1 | Fondations | 3.0 | 8–10 semaines | Même périmètre, base saine : catalogue d'opérations, jobs, migrations, API v1, i18n FR/EN, passkeys, archives signées, documentation publique |
+| 1 | Fondations | 2.11 → 3.0 | 13–18 semaines (plan détaillé : `PHASE_1_PLAN.md`) | Même périmètre, base saine : catalogue d'opérations, jobs, migrations, API v1, i18n FR/EN, passkeys, archives signées, documentation publique |
 | 2 | Agent et multi-serveurs | 3.1 → 3.2 | 10–12 semaines | Agent local puis distants, vue flotte, API publique (lecture et opérations courantes), dépôt APT, image Docker du central, audit externe |
 | 3 | Administration de l'hôte | 3.3 | 6–8 semaines | Pare-feu, SSH, utilisateurs, services, tâches planifiées, mises à jour avancées |
 | 4 | Hébergement, conteneurs, bases | 3.4 → 3.6 | 12–16 semaines | Création de sites, PHP par site, Docker/Compose, déploiement Git, bases, fichiers en écriture, sauvegardes restic |
@@ -56,7 +56,9 @@ L'exemple proposait « consolidation → infrastructure (multi-serveurs) → hé
 
 ---
 
-## Phase 1 — Fondations (3.0)
+## Phase 1 — Fondations (2.11 → 3.0)
+
+> Plan détaillé, tâche par tâche, avec dépendances, compatibilité, tests et risques : [`PHASE_1_PLAN.md`](PHASE_1_PLAN.md).
 
 **Fonctionnalités / travaux**
 - **Migrations versionnées** (`bin/migrate`, `schema_migrations`) ; colonnes préparatoires `org_id` / `server_id` avec valeurs par défaut.

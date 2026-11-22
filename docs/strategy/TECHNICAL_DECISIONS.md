@@ -19,23 +19,26 @@
 | D-02 | Langage du serveur central | Rester en PHP, structuré | Proposée |
 | D-03 | Langage de l'agent | Go | **À trancher** |
 | D-04 | Transport agent ↔ central | Sondage HTTPS sortant, puis WebSocket | **À trancher** |
-| D-05 | Dépendances PHP | Composer, liste courte de bibliothèques auditées | **À trancher** |
+| D-05 | Dépendances PHP | Composer, dépendances limitées | **En validation** (choix du mainteneur, conséquences : `PHASE_1_PLAN.md` §1) |
 | D-06 | Base de données du central | MariaDB | Proposée |
 | D-07 | Stockage des métriques | MariaDB partitionnée + agrégats ; TSDB en extension | Proposée |
-| D-08 | Front-end | Vanilla + modules ES, sans build | **À trancher** |
+| D-08 | Front-end | Vanilla JS modulaire | **En validation** (choix du mainteneur, conséquences : `PHASE_1_PLAN.md` §1) |
 | D-09 | Moteur de sauvegarde | restic | Proposée |
 | D-10 | Modèle d'extensions | Progressif, signé, pas de PHP tiers non signé | Proposée |
 | D-11 | Distribution et mises à jour | Tags signés (fait) → archives signées + dépôt APT | Partiellement actée |
-| D-12 | Ordre de la roadmap | Fondations avant fonctionnalités | **À trancher** |
+| D-12 | Ordre de la roadmap | Fondations d'abord | **En validation** (choix du mainteneur, conséquences : `PHASE_1_PLAN.md` §1) |
 | D-13 | Internationalisation | Catalogues JSON, codes de message côté agent | Proposée |
 | D-14 | IA | Extension facultative, fournisseurs interchangeables, actions = opérations | Proposée |
-| D-15 | Licence | Choisir **avant** les contributions externes : Apache-2.0 (permissive) ou AGPL-3.0 (protège du SaaS fermé) | **À trancher** |
-| D-16 | Nom du produit | « Hostkeep » partout | **À trancher** |
+| D-15 | Licence | Apache-2.0 | **En validation** (choix du mainteneur, conséquences : `PHASE_1_PLAN.md` §1) |
+| D-16 | Nom du produit | « HostKeep » (marque) ; identifiants techniques en minuscules | **En validation** (choix du mainteneur, conséquences : `PHASE_1_PLAN.md` §1) |
 | D-17 | Façons d'installer le serveur central | Natif (actuel) + image Docker du central pour la gestion à distance | **À trancher** |
-| D-18 | Langue de référence du projet | Anglais pour le code, l'API, la doc de référence et les contributions ; français maintenu au même niveau dans l'interface et la doc utilisateur | **À trancher** |
-| D-19 | Versions et support | SemVer strict, une version mineure maintenue + la précédente pour la sécurité, dates de fin de support publiées | **À trancher** |
-| D-20 | Contributions et gouvernance | DCO (signature « Signed-off-by »), code de conduite, modèles de tickets, revue obligatoire | **À trancher** |
+| D-18 | Langue de référence du projet | Anglais de référence, français disponible | **En validation** (choix du mainteneur, conséquences : `PHASE_1_PLAN.md` §1) |
+| D-19 | Versions et support | Version actuelle + précédente | **En validation** (choix du mainteneur, conséquences : `PHASE_1_PLAN.md` §1) |
+| D-20 | Contributions et gouvernance | DCO | **En validation** (choix du mainteneur, conséquences : `PHASE_1_PLAN.md` §1) |
 | D-21 | Télémétrie | Aucune par défaut ; compteur anonyme d'installations seulement en option explicite | **À trancher** |
+| D-23 | Outil du site de documentation | MkDocs Material | **À trancher** (`PHASE_1_PLAN.md` §1.9) |
+| D-24 | Version minimale de PHP en 3.x | 8.1 (garde Ubuntu 22.04) si les dépendances le permettent | **À trancher** |
+| D-25 | Signature des archives de version | Signatures SSH (même clé que les tags) | **À trancher** |
 | D-22 | Calendrier de l'API publique | Jetons à portée + OpenAPI publics dès la 3.2 (lecture et opérations courantes), complète en 4.0 | **À trancher** |
 
 ---

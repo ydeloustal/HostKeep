@@ -15,6 +15,7 @@
 | [`TARGET_ARCHITECTURE.md`](TARGET_ARCHITECTURE.md) | Central + agent, catalogue d'opérations, modèle de données, API, extensions ; **§15 : limites pour un produit public et correctifs** |
 | [`SECURITY_ROADMAP.md`](SECURITY_ROADMAP.md) | Modèle de menace, exigences, niveaux de risque, tests ; ce qui est livré et ce qui reste |
 | [`PRODUCT_ROADMAP.md`](PRODUCT_ROADMAP.md) | Les phases, dans quel ordre et pourquoi ; ajouts 🌍 du produit public |
+| [`PHASE_1_PLAN.md`](PHASE_1_PLAN.md) | **Phase 1 détaillée** : conséquences des décisions, 67 tâches, dépendances, compatibilité, tests, risques |
 | [`TECHNICAL_DECISIONS.md`](TECHNICAL_DECISIONS.md) | Les choix structurants, leurs alternatives, et les **13 qui attendent ta décision** |
 
 ---
@@ -73,7 +74,7 @@ Oui dans les grandes lignes : le modèle cible (central + agents, organisations 
 | Phase | Version | Contenu | Durée indicative |
 |---|---|---|---|
 | 0 ✅ | 2.10.0 / 2.10.1 | Correctifs sécurité, mécanisme de signature, socle de tests | livrée |
-| 1 | 3.0 | Fondations : migrations, modules, catalogue, jobs, événements, API v1 interne, i18n FR/EN, passkeys, modèle multi-organisations, archives signées, documentation publique | 8–10 sem. |
+| 1 | 2.11 → 3.0 | Fondations : migrations, modules, catalogue, jobs, événements, API v1 interne, i18n FR/EN, passkeys, modèle multi-organisations, archives signées, documentation publique, pare-feu UFW | 13–18 sem. (`PHASE_1_PLAN.md`) |
 | 2 | 3.1–3.2 | Agent local (PHP sans sudo), agents distants, vue flotte, API publique, APT, image Docker du central, audit externe | 10–12 sem. |
 | 3 | 3.3 | Hôte : pare-feu, SSH, utilisateurs, services, tâches, mises à jour | 6–8 sem. |
 | 4 | 3.4–3.6 | Sites et PHP par site, fichiers, Docker/Compose, déploiement Git, bases, sauvegardes restic | 12–16 sem. |
@@ -81,7 +82,7 @@ Oui dans les grandes lignes : le modèle cible (central + agents, organisations 
 | 6 | 4.0 | Interface des organisations et équipes, rôles personnalisés, API complète, extensions, second audit | 8–10 sem. |
 | 7 | 4.x | Workflows, remédiation, IA (extension facultative) | 8+ sem. |
 
-Total indicatif jusqu'à la 4.0 : **14 à 18 mois** à temps plein pour une personne (2 mois de plus qu'avant, pour la distribution, la documentation bilingue et l'audit externe qu'impose un produit public). Des contributeurs réguliers, rendus possibles par la Phase 1, peuvent réduire ce délai.
+Total indicatif jusqu'à la 4.0 : **15 à 20 mois** (Phase 1 réestimée à 13–18 semaines dans son plan détaillé) à temps plein pour une personne (plus qu'au départ, pour la distribution, la documentation bilingue, les tests de mise à jour et l'audit externe qu'impose un produit public). Des contributeurs réguliers, rendus possibles par la Phase 1, peuvent réduire ce délai.
 
 ---
 
@@ -147,6 +148,8 @@ D-01 (évolution, pas de refonte), D-02 (central en PHP), D-06 (MariaDB), D-07 (
 ---
 
 ## 8. Lancer la Phase 1
+
+> Le plan détaillé est dans [`PHASE_1_PLAN.md`](PHASE_1_PLAN.md) (versions 2.11 → 3.0, 13 à 18 semaines). Les 8 décisions du §6.1 sont **en validation** : leurs conséquences y sont décrites (§1), avec trois nouvelles décisions (D-23 à D-25).
 
 Dès que les décisions du §6.1 sont prises :
 1. **ADR du catalogue d'opérations** : format exact, conversion des 21 verbes actuels, génération des validations PHP, du front et des tests.
